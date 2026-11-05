@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>包記炊粿</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="rotate-gate" aria-hidden="true">
+    <div class="rotate-card">
+      <div class="rotate-icon">📱↻</div>
+      <p>請將手機橫過來玩</p>
+      <p class="sub">包記炊粿 · 顧粿沒那麼簡單</p>
+    </div>
+  </div>
+
+  <div id="game-root">
+    <canvas id="game" width="1920" height="1080"></canvas>
+
+    <!-- HUD (play) -->
+    <div id="hud" class="hidden">
+      <div class="hud-left">
+        <div id="hud-avatar" class="hud-avatar" title="包哥"></div>
+        <div class="hud-meta">
+          <div id="hud-name" class="hud-name">訪客</div>
+          <div class="hud-heat-wrap">
+            <span>火力</span>
+            <div class="heat-bar"><div id="heat-fill"></div></div>
+            <span id="heat-val">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="hud-center">
+        <div class="hud-score-label">分數</div>
+        <div id="hud-score" class="hud-score">0</div>
+        <div id="hud-combo" class="hud-combo">連擊 0 · ×1.0</div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-timer-label">剩餘</div>
+        <div id="hud-timer" class="hud-timer">1:30</div>
+      </div>
+    </div>
+
+    <!-- Floating feedback -->
+    <div id="float-layer"></div>
+
+    <!-- Combo closeup -->
+    <div id="combo-popup" class="hidden">
+      <img src="assets/baoge-combo-closeup.jpg" alt="火力全開" />
+      <div class="combo-popup-label">火力全開！</div>
+    </div>
+
+    <!-- Title -->
+    <section id="screen-title" class="screen">
+      <div class="title-bg"></div>
+      <div class="title-panel">
+        <img class="title-hero" src="assets/baoji-character-art.jfif" alt="包記炊粿" />
+        <h1>包記炊粿</h1>
+        <p class="slogan">顧粿沒那麼簡單</p>
+        <p class="hint">橫向 · 觸控 · 90 秒衝分</p>
+        <div class="name-row">
+          <label for="name-input">名字（2–8 字，可略）</label>
+          <input id="name-input" type="text" maxlength="8" placeholder="訪客" autocomplete="off" />
+        </div>
+        <button id="btn-start" class="btn primary">開始顧粿</button>
+        <button id="btn-boards" class="btn ghost">連線排行榜</button>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="screen-results" class="screen hidden">
+      <div class="results-panel">
+        <div id="results-bust" class="results-bust"></div>
+        <h2>本回合結算</h2>
+        <div id="results-score" class="results-score">0</div>
+        <div id="results-detail" class="results-detail"></div>
+        <div class="name-row">
+          <label for="results-name">提交名稱（可改）</label>
+          <input id="results-name" type="text" maxlength="8" placeholder="訪客" autocomplete="off" />
+        </div>
+        <p id="submit-error" class="submit-error" hidden></p>
+        <button id="btn-submit" class="btn primary">登錄排行榜</button>
+        <button id="btn-again" class="btn">再來一回合</button>
+        <button id="btn-title" class="btn ghost">回標題</button>
+      </div>
+    </section>
+
+    <!-- Boards -->
+    <section id="screen-boards" class="screen hidden">
+      <div class="boards-panel">
+        <h2>連線排行榜</h2>
+        <div class="boards-cols">
+          <div>
+            <h3>今日</h3>
+            <ol id="board-daily"></ol>
+          </div>
+          <div>
+            <h3>累積</h3>
+            <ol id="board-alltime"></ol>
+          </div>
+        </div>
+        <button id="btn-boards-close" class="btn primary">關閉</button>
+      </div>
+    </section>
+
+    <!-- Touch hint strip -->
+    <div id="touch-hint" class="hidden">倒漿 · 搧火 · 揭籠 · 出餐</div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
