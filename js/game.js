@@ -448,7 +448,7 @@
     $('results-detail').innerHTML =
       `最高連擊 <b>${play.maxCombo}</b> · 紅心 ${play.stats.hong} · 恰到好處 ${play.stats.qia}<br>` +
       `微焦 ${play.stats.wei} · 失敗 ${play.stats.fail} · 兩秒內出餐 ${play.stats.serves}` +
-      (rank ? `<br>本局評價 ${rank}（門檻來自合成試玩，不是真實玩家百分位）` : '');
+      (rank ? `<br>本局評價 ${rank}（舊的暫定門檻，尚未採用，也不是真實玩家百分位）` : '');
     $('results-name').value = validName(playerName) ? playerName : '';
     setSubmitError('');
     setSubmitBusy(false);
@@ -744,6 +744,31 @@
     }
     hit += bonus;
     play.score += hit;
+    if (play.ledger) {
+      // Evidence only. Does not change the score.
+      // Identity: base + shape + shen + comboLift + multiLift + rounding
+      //   = floor((base + shape + shen) * mul * multi)
+      // comboLift is the extra from the post-increment multiplier before 火力全開.
+      // multiLift is the extra from ×1.5 applied to that combo-scaled sum.
+      // rounding is the floor residual, in (-1, 0].
+      const unscaled = base + shen + shape;
+      const comboLift = unscaled * (mul - 1);
+      const multiLift = unscaled * mul * (multi - 1);
+      const product = unscaled + comboLift + multiLift;
+      const awarded = Math.floor(product);
+      const L = play.ledger;
+      L.base += base;
+      L.shape += shape;
+      L.shen += shen;
+      L.comboLift += comboLift;
+      L.multiLift += multiLift;
+      L.rounding += awarded - product;
+      L.milestone += bonus;
+      L.uncovers += 1;
+      L.cookTimes.push(st.cookTime);
+      L.grades[grade.id] = (L.grades[grade.id] || 0) + 1;
+      if (multi > 1) L.multiHits = (L.multiHits || 0) + 1;
+    }
     if (multi > 1) play.multiFlash = 1.5;
     st.shenHand = shen > 0;
 
@@ -790,6 +815,13 @@
     const timely = st.timelyLeft > 0;
     const add = timely ? TIMELY_SERVE : 0;
     play.score += add;
+    if (play.ledger) {
+      play.ledger.serves += 1;
+      if (add) {
+        play.ledger.timelyServe += add;
+        play.ledger.timelyCount += 1;
+      }
+    }
     if (timely) play.stats.serves += 1;
     spawnDrop(st);
     beginAct('place', 0.6, {
@@ -827,6 +859,10 @@
     st.lastGrade = null;
     st.lastHit = 0;
     play.selectedId = st.id;
+    if (play.ledger) {
+      play.ledger.pours += 1;
+      play.ledger.slots[st.id] = (play.ledger.slots[st.id] || 0) + 1;
+    }
     setAvatar(AV.fire, 0.8);
     floatText(st.x + st.w / 2, st.y + st.h / 2, '倒漿', 'ok');
     beginAct('pour', 0.8, { x: st.x + st.w / 2, y: st.y + 20 });
@@ -1018,18 +1054,23 @@
     play.nextCritter = Math.max(play.nextCritter, elapsed + 15 + Math.random() * 5);
     if (tapped) {
       play.score += EVENT_SCORE;
+      if (play.ledger) play.ledger.eventHit += EVENT_SCORE;
       floatText(pos.x, pos.y, `+${EVENT_SCORE}`, 'good');
     } else if (c.kind === 'roach') {
       const st = play.steamers.find((s) => s.id === c.targetId);
       if (st && (st.state === 'cooking' || st.state === 'serve')) ruinSteamer(st);
+      const before = play.score;
       play.score = Math.max(0, play.score - ROACH_PENALTY);
+      if (play.ledger) play.ledger.penalties += play.score - before;
       play.combo = 0;
       // Heart-streak vs cockroach miss is unresolved: a miss is not a non-heart
       // grade, so the streak is left as-is until that call is decided.
       floatText(st ? st.x + st.w / 2 : pos.x, st ? st.y : pos.y, `-${ROACH_PENALTY}`, 'penalty');
     } else {
       stealOneKueh();
+      const before = play.score;
       play.score = Math.max(0, play.score - MOUSE_PENALTY);
+      if (play.ledger) play.ledger.penalties += play.score - before;
       floatText(ZONES.basket.x + ZONES.basket.w / 2, ZONES.basket.y + 20, `-${MOUSE_PENALTY}`, 'penalty');
     }
     updateHud();
@@ -1344,6 +1385,10 @@
       if (play.act.age >= play.act.dur) play.act = null;
     }
     if (play.multiFlash > 0) play.multiFlash -= dt;
+    if (play.ledger) {
+      const cookingN = play.steamers.filter((s) => s.state === 'cooking').length;
+      if (cookingN > (play.ledger.maxCooking || 0)) play.ledger.maxCooking = cookingN;
+    }
 
     if (play.tutorialT > 0) play.tutorialT -= dt;
 
@@ -2368,7 +2413,7 @@
     const hand = outsideFace(m, m.x + phase * 200, m.head + BAOGE_H * 0.62);
     drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, phase * 50);
     drawFanProp(hand.x, hand.y, phase * 1.15);
-    markPreview(hand.x, hand.y - 40);
+    markPreview(hand.x + (phase < 0 ? -70 : 90), hand.y + 36);
   }
 
   function drawPourArm(m, act) {
@@ -2773,71 +2818,176 @@
           return s / 4294967296;
         };
       },
+      getLedger() {
+        if (!play || !play.ledger) return null;
+        const L = play.ledger;
+        const sum = L.base + L.shape + L.shen + L.comboLift + L.multiLift + L.rounding
+          + L.milestone + L.timelyServe + L.eventHit + L.penalties;
+        return {
+          score: play.score,
+          drift: play.score - sum,
+          maxCombo: play.maxCombo,
+          timeLeft: play.timeLeft,
+          state,
+          parts: {
+            base: L.base, shape: L.shape, shen: L.shen, comboLift: L.comboLift,
+            multiLift: L.multiLift, rounding: L.rounding, milestone: L.milestone,
+            timelyServe: L.timelyServe, eventHit: L.eventHit, penalties: L.penalties,
+          },
+          pours: L.pours, uncovers: L.uncovers, serves: L.serves, timelyCount: L.timelyCount,
+          grades: { ...L.grades }, slots: { ...L.slots }, maxCooking: L.maxCooking,
+          cookTimes: L.cookTimes.slice(),
+        };
+      },
+      armLedger() {
+        if (!play) return null;
+        play.ledger = {
+          base: 0, shape: 0, shen: 0, comboLift: 0, multiLift: 0, rounding: 0,
+          milestone: 0, timelyServe: 0, eventHit: 0, penalties: 0,
+          pours: 0, uncovers: 0, serves: 0, timelyCount: 0,
+          grades: {}, cookTimes: [], maxCooking: 0, slots: {},
+          handActions: 0, handGaps: [], sameFrameHands: 0, swats: 0, fanToggles: 0,
+          multiHits: 0,
+        };
+        return play.ledger;
+      },
       simulate(style) {
+        // One primary hand. Fan is the other finger. A swat may share a tick
+        // with the hand because the game accepts a second touch. Two hand
+        // actions in one tick are counted and should stay at 0.
+        // Game time steps at 1/60s, the same cap a 60fps browser frame uses.
+        // The loop does not wait on the wall clock.
         startRound();
-        const dt = 0.05;
+        const ledger = {
+          base: 0, shape: 0, shen: 0, comboLift: 0, multiLift: 0, rounding: 0,
+          milestone: 0, timelyServe: 0, eventHit: 0, penalties: 0,
+          pours: 0, uncovers: 0, serves: 0, timelyCount: 0,
+          grades: {}, cookTimes: [], maxCooking: 0, slots: {},
+          handActions: 0, handGaps: [], sameFrameHands: 0, swats: 0, fanToggles: 0,
+          multiHits: 0,
+        };
+        play.ledger = ledger;
+        const dt = 1 / 60;
+        const wall0 = Date.now();
         let guard = 0;
-        while (play && play.timeLeft > 0 && state === 'play' && guard < 4000) {
+        let handFreeAt = 0;
+        let lastHandAt = -1;
+        let fanDecideAt = 0;
+        const ids = style === 'expert' ? ['a1', 'a2', 'a3', 'b1'] : ['a1', 'a2'];
+        while (play && play.timeLeft > 0 && state === 'play' && guard < 8000) {
           guard += 1;
           const t = ROUND_SEC - play.timeLeft;
-          if (style === 'expert') fanning = play.heat < 38;
-          else fanning = (Math.floor(t / 1.6) % 3 === 0) && play.heat < 62;
+          if (t >= fanDecideAt) {
+            fanDecideAt = t + (style === 'expert' ? 0.4 : 0.8);
+            ledger.fanToggles += 1;
+            if (style === 'expert') {
+              if (play.heat < 32) fanning = true;
+              else if (play.heat > 46) fanning = false;
+            } else if (Math.floor(t / 3) % 2 === 0 && play.heat < 68) fanning = true;
+            else fanning = false;
+          }
           update(dt);
           if (state !== 'play' || !play) break;
-          const cooking = play.steamers.filter((s) => s.unlocked && s.state === 'cooking');
-          const empty = play.steamers.filter((s) => s.unlocked && s.state === 'empty');
-          let want = 1;
-          if (style === 'expert') want = t > 48 ? 4 : t > 22 ? 3 : 2;
-          else if (t > 28 && Math.random() < 0.45) want = 2;
-          if (cooking.length < want && empty.length) {
-            const pot = empty[0];
-            pot._react = null;
-            pot._planCook = null;
-            pot._planServe = null;
-            pourSteamer(pot);
-          }
-          for (const st of play.steamers) {
-            if (st.state !== 'cooking' && st.state !== 'serve') {
+          const now = ROUND_SEC - play.timeLeft;
+          const managed = play.steamers.filter((s) => ids.includes(s.id));
+          const want = style === 'expert' ? (now < 20 ? 2 : now < 28 ? 3 : 4) : (now < 32 ? 1 : 2);
+          for (const st of managed) {
+            if (st.state !== 'cooking') {
+              st._heartFor = null;
+              st._overFor = 0;
+              st._aim = null;
               st._react = null;
-              st._planCook = null;
-            }
-            if (st.state === 'cooking' && style === 'novice') {
-              const w = heatWindows(play.heat);
-              if (st._planCook == null) st._planCook = Math.random();
-              const p = st.progress;
-              let due = false;
-              if (st._planCook < 0.35) due = p >= w.ideal + w.hong && p <= w.ideal + w.qia;
-              else if (st._planCook < 0.7) due = p >= w.ideal + w.qia && p <= w.ideal + w.wei;
-              else if (st._planCook < 0.85) due = p >= 0.28 && p < w.ideal - w.qia;
-              else due = p > w.ideal + w.wei;
-              if (due) uncoverSteamer(st);
-            }
-            if (st.state === 'cooking' && style === 'expert') {
-              const w = heatWindows(play.heat);
-              if (st._react == null && st.progress >= w.ideal - w.hong * 0.15) {
-                st._react = 0.08 + Math.random() * 0.06;
-              }
-              if (st._react != null) {
-                st._react -= dt;
-                if (st._react <= 0) uncoverSteamer(st);
+            } else {
+              const stage = cookSteam(st);
+              if (stage === 'heart') {
+                if (st._heartFor == null) {
+                  st._heartFor = 0;
+                  st._react = style === 'expert' ? 0.34 + Math.random() * 0.22 : 0.55 + Math.random() * 0.4;
+                }
+                st._heartFor += dt;
+              } else st._heartFor = null;
+              st._overFor = stage === 'over' ? (st._overFor || 0) + dt : 0;
+              if (st._aim == null && style === 'novice') {
+                const roll = Math.random();
+                st._aim = roll < 0.45 ? 'good' : roll < 0.85 ? 'scorch' : 'early';
               }
             }
-            if (st.state === 'serve' && st._planServe == null) {
-              st._planServe = style === 'expert'
-                ? 0.15 + Math.random() * 0.45
-                : (Math.random() < 0.55 ? 0.5 + Math.random() * 1.2 : 2.2 + Math.random() * 1.5);
+            if (st.state === 'serve' && st._serveDelay == null) {
+              st._serveDelay = style === 'expert'
+                ? 0.45 + Math.random() * 0.4
+                : (Math.random() < 0.55 ? 0.8 + Math.random() * 0.8 : 2.3 + Math.random() * 1.0);
             }
-            if (st.state === 'serve' && (SERVE_WAIT - st.serveTimer) >= st._planServe) tryServe();
+            if (st.state !== 'serve') st._serveDelay = null;
           }
-          if (play.critter && style === 'expert' && play.critter.age > 0.35) resolveCritter(true);
-          if (play.critter && style === 'novice' && play.critter.age > 1.5 && Math.random() < 0.04) resolveCritter(true);
+          let swatted = false;
+          if (play.critter && !play.critter._noted && play.critter.age >= (style === 'expert' ? 0.45 : 1.8)) {
+            play.critter._noted = true;
+            if (style === 'expert' || Math.random() < 0.12) {
+              resolveCritter(true);
+              ledger.swats += 1;
+              swatted = true;
+            }
+          }
+          if (now < handFreeAt) continue;
+          const heartReady = managed.filter((s) => s.state === 'cooking' && s._heartFor != null && s._heartFor >= s._react);
+          const cooking = managed.filter((s) => s.state === 'cooking');
+          const empty = managed.filter((s) => s.state === 'empty' && s.unlocked);
+          const plates = managed.filter((s) => s.state === 'serve' && (SERVE_WAIT - s.serveTimer) >= s._serveDelay);
+          let action = null;
+          if (style === 'expert') {
+            const salvage = managed.filter((s) => s.state === 'cooking' && s._overFor > 0.35);
+            if (heartReady.length) {
+              heartReady.sort((a, b) => b._heartFor - a._heartFor);
+              action = () => uncoverSteamer(heartReady[0]);
+            } else if (plates.length) action = () => tryServe();
+            else if (salvage.length) action = () => uncoverSteamer(salvage[0]);
+            else if (cooking.length < want && empty.length) {
+              const youngest = cooking.reduce((m, s) => Math.min(m, s.cookTime), 99);
+              if (!cooking.length || youngest >= 1.15) action = () => pourSteamer(empty[0]);
+            }
+          } else if (plates.length) action = () => tryServe();
+          else {
+            const due = cooking.find((s) => {
+              const stage = cookSteam(s);
+              if (s._aim === 'early') return s.cookTime > 1.5 && stage === 'raw';
+              if (s._aim === 'good') return stage === 'near' || (s._heartFor != null && s._heartFor >= s._react);
+              if (s._aim === 'scorch') return s._overFor > 0.2;
+              return false;
+            });
+            if (due) action = () => uncoverSteamer(due);
+            else if (cooking.length < want && empty.length) action = () => pourSteamer(empty[0]);
+          }
+          if (!action) continue;
+          ledger.handActions += 1;
+          if (swatted) ledger.sameTickSwatAndHand = (ledger.sameTickSwatAndHand || 0) + 1;
+          if (lastHandAt >= 0) ledger.handGaps.push(now - lastHandAt);
+          lastHandAt = now;
+          handFreeAt = now + (style === 'expert' ? 0.50 + Math.random() * 0.22 : 0.95 + Math.random() * 0.45);
+          action();
         }
+        const sum = ledger.base + ledger.shape + ledger.shen + ledger.comboLift + ledger.multiLift
+          + ledger.rounding + ledger.milestone + ledger.timelyServe + ledger.eventHit + ledger.penalties;
+        const times = ledger.cookTimes;
+        const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
         return {
           score: play ? play.score : 0,
           maxCombo: play ? play.maxCombo : 0,
           stats: play ? { ...play.stats } : null,
           timeLeft: play ? play.timeLeft : null,
           state,
+          wallMs: Date.now() - wall0,
+          gameSec: play ? ROUND_SEC - play.timeLeft : null,
+          drift: (play ? play.score : 0) - sum,
+          ledger: {
+            ...ledger,
+            cookMean: mean(times),
+            cookMin: times.length ? Math.min(...times) : 0,
+            cookMax: times.length ? Math.max(...times) : 0,
+            gapMean: mean(ledger.handGaps),
+            gapMin: ledger.handGaps.length ? Math.min(...ledger.handGaps) : 0,
+            grades: { ...ledger.grades },
+            slots: { ...ledger.slots },
+          },
         };
       },
     };
