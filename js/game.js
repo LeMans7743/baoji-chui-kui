@@ -44,6 +44,8 @@
   };
   // indices 0..5 matching sheet cells
   const AV = { idle: 0, fire: 1, proud: 2, panic: 3, rush: 4, win: 5 };
+  // HUD sheet is 2×3, reading order. Cell 5 (1-based) is the sweating 被催單緊張 face.
+  const AV_SCARED = 4;
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -73,8 +75,13 @@
   // Steamers unlock over heat/time. Spread across the stove so each kueh reads on its own.
   // Hit size is the visible pot; the cake is drawn at KUEH_WIDTH_RATIO of that width.
   const KUEH_WIDTH_RATIO = 0.72;
-  const BAOGE_FLOOR = 1000;
-  const BAOGE_H = Math.round(H * 0.30);
+  const BAOGE_FLOOR = 1040;
+  const BAOGE_H = Math.round(H * 0.38);
+  const BAOGE_HOME_X = 860;
+  const CRITTER_LIFE = 3;
+  const EVENT_SCORE = 50;
+  const ROACH_PENALTY = 150;
+  const MOUSE_PENALTY = 200;
   const STEAMER_DEFS = [
     { id: 'a1', name: '鋁籠·左', x: 180, y: 400, w: 310, h: 170, unlockAt: 0, kind: 'alum' },
     { id: 'a2', name: '鋁籠·中下', x: 560, y: 408, w: 300, h: 170, unlockAt: 0, kind: 'alum' },
@@ -99,6 +106,8 @@
   let fanning = false;
   let pointers = new Map();
   let vizT = 0;
+  let audioCtx = null;
+  let chompAt = -1;
 
   function loadImage(src) {
     return new Promise((resolve, reject) => {
@@ -372,9 +381,13 @@
       heat: 28,
       heatVel: 0,
       steamers: STEAMER_DEFS.map(makeSteamer),
-      baoge: { x: 960, y: BAOGE_FLOOR, tx: 960, ty: BAOGE_FLOOR, facing: 1 },
+      baoge: { x: BAOGE_HOME_X, y: BAOGE_FLOOR, tx: BAOGE_HOME_X, ty: BAOGE_FLOOR, facing: 1 },
       drops: [],
+      sparks: [],
       selectedId: 'a1',
+      critter: null,
+      nextCritter: 30,
+      edgeFlash: 0,
       events: [],
       eventCD: 8,
       milestones: { 5: false, 10: false, 15: false },
@@ -387,6 +400,7 @@
       fireOpen: false,
     };
     fanning = false;
+    pointers.clear();
     setAvatar(AV.idle, 99);
     updateHud();
     showScreen(null);
@@ -592,8 +606,15 @@
   }
 
   function approachBaoge(x) {
-    play.baoge.tx = Math.max(640, Math.min(1280, x));
+    const bw = BAOGE_H * ((assets.baoge && assets.baoge.width) ? assets.baoge.width / assets.baoge.height : 0.75);
+    const minX = ZONES.basket.x + ZONES.basket.w + bw * 0.2;
+    const maxX = ZONES.fan.x - bw * 0.2;
+    play.baoge.tx = Math.max(minX, Math.min(maxX, x));
     play.baoge.ty = BAOGE_FLOOR;
+  }
+
+  function crouchDrop() {
+    return fanning ? 28 : 0;
   }
 
   function floatText(x, y, text, cls) {
@@ -732,7 +753,10 @@
     st.carried = false;
     st.puffLife = 0;
     st.scale = 1;
-    st.lidOpen = 0.28;
+    st.lidOpen = 0;
+    st.heartPlayed = false;
+    st.heartTimer = 0;
+    st.ruinedT = 0;
     st.lastGrade = null;
     st.lastHit = 0;
     play.selectedId = st.id;
@@ -747,6 +771,209 @@
     const grade = gradeFromProgress(st.progress, play.heat);
     awardUncover(st, grade);
     approachBaoge(st.x + st.w / 2);
+  }
+
+  function cookSteam(st) {
+    const w = heatWindows(play.heat);
+    const p = st.progress;
+    if (p > w.ideal + w.hong) return 'over';
+    if (Math.abs(p - w.ideal) <= w.hong) return 'heart';
+    if (p >= w.ideal - w.qia) return 'near';
+    return 'raw';
+  }
+
+  function critterTap() {
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width > 0 ? rect.width / W : 0.36;
+    // 76 CSS px stays above the 64px minimum after device-pixel rounding.
+    return Math.max(76 / scale, 76);
+  }
+
+  function critterPos(c) {
+    const u = Math.min(1, Math.max(0, c.age / CRITTER_LIFE));
+    if (c.kind === 'roach') {
+      const st = play.steamers.find((s) => s.id === c.targetId) || play.steamers[0];
+      const tx = st.x + st.w / 2;
+      const ty = st.y + st.h * 0.55;
+      return {
+        x: c.originX + (tx - c.originX) * u + Math.sin(c.age * 11) * 16,
+        y: c.originY + (ty - c.originY) * u,
+      };
+    }
+    const bx = ZONES.basket.x + ZONES.basket.w * 0.5;
+    const by = ZONES.basket.y + 36;
+    const dash = Math.min(1, c.age / 1.15);
+    const ease = dash * dash;
+    return {
+      x: c.originX + (bx - c.originX) * ease,
+      y: c.originY + (by - c.originY) * ease + Math.sin(c.age * 18) * 10,
+    };
+  }
+
+  function critterHit(x, y) {
+    if (!play || !play.critter) return false;
+    const p = critterPos(play.critter);
+    const half = critterTap() / 2;
+    return Math.abs(x - p.x) <= half && Math.abs(y - p.y) <= half;
+  }
+
+  function audio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playAlert() {
+    try {
+      const c = audio();
+      if (!c) return;
+      const now = c.currentTime;
+      [880, 520].forEach((freq, i) => {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        const t0 = now + i * 0.11;
+        o.type = 'square';
+        o.frequency.setValueAtTime(freq, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.1);
+        o.connect(g);
+        g.connect(c.destination);
+        o.start(t0);
+        o.stop(t0 + 0.11);
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function playChomp() {
+    if (vizT - chompAt < 0.32) return;
+    chompAt = vizT;
+    try {
+      const c = audio();
+      if (!c) return;
+      const now = c.currentTime;
+      for (let i = 0; i < 2; i++) {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        const t0 = now + i * 0.12;
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(480, t0);
+        o.frequency.exponentialRampToValueAtTime(120, t0 + 0.08);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.1, t0 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+        o.connect(g);
+        g.connect(c.destination);
+        o.start(t0);
+        o.stop(t0 + 0.1);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function spawnCritter(forcedKind) {
+    if (!play || play.critter) return;
+    const kind = forcedKind === 'mouse' || forcedKind === 'roach'
+      ? forcedKind
+      : (Math.random() < 0.5 ? 'roach' : 'mouse');
+    let targetId = null;
+    let originX;
+    let originY;
+    if (kind === 'roach') {
+      const busy = play.steamers.filter((s) => s.unlocked && (s.state === 'cooking' || s.state === 'serve'));
+      const open = play.steamers.filter((s) => s.unlocked);
+      const list = busy.length ? busy : open;
+      if (!list.length) return;
+      const st = list[Math.floor(Math.random() * list.length)];
+      targetId = st.id;
+      originX = Math.max(40, st.x - 240);
+      originY = st.y + st.h * 0.65;
+    } else {
+      originX = W - 70;
+      originY = ZONES.basket.y - 20;
+    }
+    play.critter = { kind, age: 0, targetId, originX, originY };
+    play.edgeFlash = 0.55;
+    setAvatar(AV_SCARED, 1.7);
+    playAlert();
+  }
+
+  function ruinSteamer(st) {
+    st.shownProgress = 1.08;
+    st.ruinedT = 0.8;
+    st.revealAge = 0;
+    st.lidOpen = 1;
+    st.scale = 1.15;
+    st.carried = false;
+    st.carryAge = -1;
+    st.serveTimer = 0;
+    st.lastGrade = null;
+    st.state = 'cooldown';
+    st.cookTime = 0.8;
+    st.progress = 0;
+    st.heartPlayed = false;
+  }
+
+  function stealOneKueh() {
+    const served = play.steamers.find((s) => s.state === 'serve');
+    if (served) {
+      served.state = 'empty';
+      served.carried = false;
+      served.carryAge = -1;
+      served.serveTimer = 0;
+      served.progress = 0;
+      served.revealAge = -1;
+      return;
+    }
+    const cooking = play.steamers.find((s) => s.state === 'cooking');
+    if (cooking) {
+      cooking.state = 'empty';
+      cooking.progress = 0;
+      cooking.lidOpen = 0.62;
+      cooking.heartPlayed = false;
+    }
+  }
+
+  function resolveCritter(tapped) {
+    const c = play && play.critter;
+    if (!c) return;
+    const pos = critterPos(c);
+    play.critter = null;
+    const elapsed = ROUND_SEC - play.timeLeft;
+    play.nextCritter = Math.max(play.nextCritter, elapsed + 15 + Math.random() * 5);
+    if (tapped) {
+      play.score += EVENT_SCORE;
+      floatText(pos.x, pos.y, `+${EVENT_SCORE}`, 'good');
+    } else if (c.kind === 'roach') {
+      const st = play.steamers.find((s) => s.id === c.targetId);
+      if (st && (st.state === 'cooking' || st.state === 'serve')) ruinSteamer(st);
+      play.score = Math.max(0, play.score - ROACH_PENALTY);
+      play.combo = 0;
+      floatText(st ? st.x + st.w / 2 : pos.x, st ? st.y : pos.y, `-${ROACH_PENALTY}`, 'penalty');
+    } else {
+      stealOneKueh();
+      play.score = Math.max(0, play.score - MOUSE_PENALTY);
+      floatText(ZONES.basket.x + ZONES.basket.w / 2, ZONES.basket.y + 20, `-${MOUSE_PENALTY}`, 'penalty');
+    }
+    updateHud();
+  }
+
+  function updateCritters(dt, elapsed) {
+    if (play.edgeFlash > 0) play.edgeFlash -= dt;
+    if (play.critter) {
+      play.critter.age += dt;
+      if (play.critter.age >= CRITTER_LIFE) resolveCritter(false);
+      return;
+    }
+    if (elapsed >= play.nextCritter) {
+      spawnCritter();
+      play.nextCritter = elapsed + 15 + Math.random() * 5;
+    }
   }
 
   function hitTest(x, y) {
@@ -780,13 +1007,21 @@
     if (state !== 'play') return;
     e.preventDefault();
     const { x, y } = canvasCoords(e.clientX, e.clientY);
-    pointers.set(e.pointerId, { x, y });
+    try { audio(); } catch (err) { /* ignore */ }
+    if (critterHit(x, y)) {
+      pointers.set(e.pointerId, { x, y, role: 'critter' });
+      resolveCritter(true);
+      return;
+    }
     const hit = hitTest(x, y);
+    const role = hit && hit.type === 'fan' ? 'fan' : 'other';
+    pointers.set(e.pointerId, { x, y, role });
     if (!hit) return;
     if (hit.type === 'fan') {
       fanning = true;
-      approachBaoge(ZONES.fan.x + 40);
-      setAvatar(AV.fire, 0.6);
+      play.baoge.tx = BAOGE_HOME_X;
+      play.baoge.ty = BAOGE_FLOOR;
+      if (!(avatarExpr === AV_SCARED && avatarHold > 0)) setAvatar(AV.fire, 0.6);
     } else if (hit.type === 'basket') {
       approachBaoge(ZONES.basket.x + ZONES.basket.w - 20);
       tryServe();
@@ -804,19 +1039,31 @@
     }
   }
 
+  function refreshFanning() {
+    let held = false;
+    for (const p of pointers.values()) {
+      if (p.role === 'fan') held = true;
+    }
+    fanning = held;
+  }
+
   function onPointerUp(e) {
     pointers.delete(e.pointerId);
-    if (pointers.size === 0) fanning = false;
+    refreshFanning();
   }
 
   function onPointerMove(e) {
     if (state !== 'play' || !pointers.has(e.pointerId)) return;
+    const rec = pointers.get(e.pointerId);
     const { x, y } = canvasCoords(e.clientX, e.clientY);
-    pointers.set(e.pointerId, { x, y });
+    rec.x = x;
+    rec.y = y;
+    if (rec.role !== 'fan') return;
     const f = ZONES.fan;
-    if (fanning) {
-      const still = x >= f.x - 40 && x <= f.x + f.w + 40 && y >= f.y - 40 && y <= f.y + f.h + 40;
-      if (!still) fanning = false;
+    const still = x >= f.x - 40 && x <= f.x + f.w + 40 && y >= f.y - 40 && y <= f.y + f.h + 40;
+    if (!still) {
+      rec.role = 'other';
+      refreshFanning();
     }
   }
 
@@ -856,7 +1103,17 @@
     if (fanning) {
       play.heat += 22 * dt;
       firePulse += dt * 8;
-      if (avatarExpr !== AV.fire) setAvatar(AV.fire, 0.5);
+      if (!(avatarExpr === AV_SCARED && avatarHold > 0) && avatarExpr !== AV.fire) setAvatar(AV.fire, 0.5);
+      if (Math.random() < 0.85) {
+        play.sparks.push({
+          x: 760 + Math.random() * 90,
+          y: 600 + Math.random() * 30,
+          vx: -30 + Math.random() * 80,
+          vy: -160 - Math.random() * 120,
+          life: 0.28 + Math.random() * 0.25,
+          max: 0.45,
+        });
+      }
     } else {
       // natural drift toward mid-low, plus charcoal flicker
       const target = 22 + play.charcoalFlicker * 25;
@@ -893,6 +1150,18 @@
       if (st.state === 'cooking') {
         st.progress += dt * 0.18 * heatFactor * comboSpeed;
         st.cookTime += dt;
+        const steam = cookSteam(st);
+        if (steam === 'heart') {
+          st.heartTimer = (st.heartTimer || 0) + dt;
+          if (!st.heartPlayed || st.heartTimer >= 0.9) {
+            st.heartPlayed = true;
+            st.heartTimer = 0;
+            playChomp();
+          }
+        } else {
+          st.heartPlayed = false;
+          st.heartTimer = 0;
+        }
         // auto fail if way overcooked
         if (st.progress >= 1.15) {
           awardUncover(st, GRADE.JIAOHUI);
@@ -919,8 +1188,19 @@
         }
       }
       if (st.flash > 0) st.flash -= dt;
+      if (st.ruinedT > 0) st.ruinedT -= dt;
       stepSteamerVisual(st, dt);
     }
+    if (play.sparks && play.sparks.length) {
+      for (const sp of play.sparks) {
+        sp.life -= dt;
+        sp.x += sp.vx * dt;
+        sp.y += sp.vy * dt;
+        sp.vy += 80 * dt;
+      }
+      play.sparks = play.sparks.filter((sp) => sp.life > 0);
+    }
+    updateCritters(dt, elapsed);
     if (play.drops) {
       for (const d of play.drops) d.age += dt;
       play.drops = play.drops.filter((d) => d.age < d.dur + 0.42);
@@ -1010,7 +1290,7 @@
       st.lidOpen = 1;
     } else if (st.state === 'cooking') {
       st.scale = 1;
-      st.lidOpen = 0.30;
+      st.lidOpen = 0;
     } else if (st.state === 'empty') {
       st.scale = 1;
       st.lidOpen = 0.62;
@@ -1034,13 +1314,14 @@
     const b = play.baoge;
     const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
     const head = b.y - BAOGE_H;
-    const baseX = b.x - bw * 0.46;
-    const baseY = head + BAOGE_H * 0.62;
+    const drop = crouchDrop();
+    const baseX = b.x - bw * 0.42;
+    const baseY = head + BAOGE_H * 0.66 + drop;
     const spread = 76;
     const offset = (index - (count - 1) / 2) * spread;
     return {
       x: baseX + offset,
-      y: Math.max(head + BAOGE_H * 0.50, baseY),
+      y: Math.max(head + BAOGE_H * 0.48 + drop, baseY),
     };
   }
 
@@ -1077,23 +1358,114 @@
     return h >>> 0;
   }
 
-  function drawDonenessMeter(st) {
+  function drawDonenessRing(st) {
     if (st.state !== 'cooking') return;
     const w = heatWindows(play.heat);
-    const mx = st.x + 10, my = st.y + st.h + 8, mw = st.w - 20, mh = 12;
+    const cx = st.x + st.w / 2;
+    const cy = Math.max(168, st.y - 46);
+    const r = 30;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(mx, my, mw, mh);
-    // zones
-    const idealX = mx + w.ideal * mw;
-    ctx.fillStyle = 'rgba(80,180,80,0.45)';
-    ctx.fillRect(idealX - w.qia * mw, my, w.qia * 2 * mw, mh);
-    ctx.fillStyle = 'rgba(255,220,60,0.7)';
-    ctx.fillRect(idealX - w.hong * mw, my, w.hong * 2 * mw, mh);
-    // needle
-    const nx = mx + Math.min(1.05, st.progress) * mw;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(nx - 2, my - 3, 4, mh + 6);
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(20,10,8,0.88)';
+    ctx.lineWidth = 12;
+    ctx.stroke();
+    const a0 = -Math.PI / 2;
+    const p = Math.max(0, Math.min(1.05, st.progress));
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, a0, a0 + Math.min(1, p) * Math.PI * 2);
+    ctx.strokeStyle = '#ffe14a';
+    ctx.lineWidth = 12;
+    ctx.stroke();
+    // Window notches mark 紅心 on the ring. No kueh icon.
+    const mark = (frac) => {
+      const a = a0 + Math.max(0, Math.min(1, frac)) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
+      ctx.lineTo(cx + Math.cos(a) * (r + 8), cy + Math.sin(a) * (r + 8));
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    };
+    mark(w.ideal - w.hong);
+    mark(w.ideal + w.hong);
+    ctx.restore();
+  }
+
+  function drawClosedLid(cx, cy, rx, ry, kind, hop) {
+    ctx.save();
+    ctx.translate(0, -hop);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.96, ry * 0.9, 0, 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#e7b45a' : '#d7e0e6';
+    ctx.fill();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#241c16';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.62, ry * 0.48, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = kind === 'bamboo' ? 'rgba(90,48,16,0.45)' : 'rgba(70,80,88,0.45)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy - ry * 0.05, Math.max(8, rx * 0.1), 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#8a4e22' : '#5d6a72';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#241c16';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSteamStage(cx, cy, stage, phase) {
+    if (stage === 'heart') {
+      ctx.save();
+      for (let i = 0; i < 5; i++) {
+        const ox = Math.sin(phase * 1.4 + i) * 26;
+        const oy = -i * 22 - Math.abs(Math.sin(phase * 2 + i)) * 10;
+        ctx.globalAlpha = 0.9 - i * 0.1;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(cx + ox, cy + oy, 78 + i * 14, 40 + i * 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(60,50,40,0.4)';
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.font = `bold 36px ${UI_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#2a211c';
+      ctx.fillStyle = '#fffaf2';
+      const label = '噛噛';
+      const ly = cy - 78 - Math.abs(Math.sin(phase * 8)) * 6;
+      ctx.strokeText(label, cx, ly);
+      ctx.fillText(label, cx, ly);
+      ctx.restore();
+      return;
+    }
+    const over = stage === 'over';
+    const near = stage === 'near';
+    const n = over ? 6 : near ? 5 : 2;
+    const width = over ? 16 : near ? 11 : 3;
+    const rise = over ? 110 : near ? 86 : 40;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let i = 0; i < n; i++) {
+      const ph = phase * (over ? 0.8 : 1.3) + i * 1.5;
+      const x = cx + (i - (n - 1) / 2) * (near || over ? 22 : 16) + Math.sin(ph) * 6;
+      ctx.globalAlpha = (over ? 0.55 : near ? 0.8 : 0.5);
+      ctx.strokeStyle = over ? '#5e5a56' : '#fffaf3';
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(x, cy);
+      ctx.bezierCurveTo(x - 16, cy - rise * 0.35, x + 20, cy - rise * 0.65, x - 4, cy - rise);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -1102,9 +1474,7 @@
   function chipFor(st) {
     if (st.state === 'empty') return { icon: 'arrow', label: '倒漿' };
     if (st.state === 'cooking') {
-      const stage = stageInfo(st.progress);
-      const verb = (st.flash > 0) ? '快揭' : '揭籠';
-      return { icon: stage.icon, label: `${stage.label}·${verb}` };
+      return { icon: 'lid', label: st.flash > 0 ? '快揭' : '揭籠' };
     }
     if (st.state === 'serve') return { icon: 'basket', label: `出餐 ${Math.max(0, st.serveTimer).toFixed(1)}s` };
     return { icon: 'dot', label: '…' };
@@ -1580,28 +1950,48 @@
     drawPotBody(cx, cy, rx, ry, st.kind);
 
     const traveling = st.state === 'serve' && (st.carried || st.carryAge >= 0);
-    const showInPot = st.state === 'cooking'
-      || (st.state === 'serve' && !traveling)
-      || (st.state === 'cooldown' && st.revealAge >= 0 && st.revealAge < 0.48);
+    const cooking = st.state === 'cooking';
+    const showInPot = !cooking && (
+      (st.state === 'serve' && !traveling)
+      || (st.state === 'cooldown' && st.revealAge >= 0 && st.revealAge < 0.55)
+      || (st.ruinedT > 0)
+    );
+    if (st.overflowed && cooking) drawDrip(cx, cy, rx);
+    if (cooking) {
+      const stage = cookSteam(st);
+      const hop = stage === 'heart' ? Math.abs(Math.sin(vizT * 14)) * 42 : 0;
+      drawClosedLid(cx, cy, rx, ry, st.kind, hop);
+      drawSteamStage(cx, cy - ry * 0.85 - hop, stage, vizT + (seedOf(st.id) % 5));
+    } else {
+      drawFrontRim(cx, cy, rx, ry, st.kind);
+      drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
+      if (st.puffLife > 0 && !traveling) drawPuff(cx, cy - ry * 0.2, st.puffLife);
+    }
     if (showInPot) {
-      const p = st.state === 'cooking' ? st.progress : st.shownProgress;
       const kuehW = w * KUEH_WIDTH_RATIO;
       const kuehH = kuehW * 0.50;
-      drawKueh(cx, cy + 2, kuehW, kuehH, p, st.scale || 1, st.id);
-      if (st.overflowed) drawDrip(cx, cy, rx);
+      const pop = st.scale || 1;
+      drawKueh(cx, cy - (pop - 1) * 30, kuehW * pop, kuehH * pop, st.shownProgress, 1, st.id);
+      if (st.ruinedT > 0) {
+        ctx.save();
+        ctx.strokeStyle = '#ff2a2a';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(cx - kuehW * 0.28, cy - kuehH * 0.22);
+        ctx.lineTo(cx + kuehW * 0.28, cy + kuehH * 0.22);
+        ctx.moveTo(cx + kuehW * 0.28, cy - kuehH * 0.22);
+        ctx.lineTo(cx - kuehW * 0.28, cy + kuehH * 0.22);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
-    drawFrontRim(cx, cy, rx, ry, st.kind);
-    drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
-
-    if (st.state === 'cooking') drawWisps(cx, cy - ry * 0.15, 1, vizT + (seedOf(st.id) % 5));
-    if (st.puffLife > 0 && !traveling) drawPuff(cx, cy - ry * 0.2, st.puffLife);
 
     const showingGrade = st.revealAge >= 0 && st.revealAge <= 1.2 && st.lastGrade;
     if (!showingGrade) {
       const chip = chipFor(st);
       drawChip(cx, y + h - 18, chip.icon, chip.label);
     }
-    drawDonenessMeter(st);
+    drawDonenessRing(st);
     ctx.restore();
   }
 
@@ -1662,13 +2052,7 @@
     // Foreground crate + fan
     if (assets.fg) ctx.drawImage(assets.fg, 0, 0, W, H);
 
-    // Baoge stays on the floor, facing the camera, under the steamer row.
-    if (assets.baoge) {
-      const bx = play ? play.baoge.x : 960;
-      const by = play ? play.baoge.y : BAOGE_FLOOR;
-      const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
-      ctx.drawImage(assets.baoge, bx - bw / 2, by - BAOGE_H, bw, BAOGE_H);
-    }
+    if (!(state === 'play' && play)) drawBaoge();
 
     // Interactive overlays during play
     if (state === 'play' && play) {
@@ -1676,6 +2060,9 @@
         if (!st.unlocked) continue;
         drawSteamer(st);
       }
+      drawBaoge();
+      if (fanning) drawSwingFan();
+      drawSparks();
 
       const action = currentAction();
       const serveHot = action === '出餐';
@@ -1701,6 +2088,8 @@
         drawHeldKueh(st);
       }
       for (const d of play.drops || []) drawBasketDrop(d);
+      drawCritter();
+      drawEdgeFlash();
 
       const focus = focusSteamer();
       for (const st of play.steamers) {
@@ -1722,6 +2111,203 @@
     } else if (state === 'title' || state === 'boot') {
       // idle preview: stage already layered
     }
+  }
+
+  function drawBaoge() {
+    if (!assets.baoge) return;
+    const bx = play ? play.baoge.x : BAOGE_HOME_X;
+    const by = (play ? play.baoge.y : BAOGE_FLOOR) + crouchDrop();
+    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+    const sy = fanning ? 0.78 : 1;
+    ctx.save();
+    // Feet stay put. Scale toward the floor so a crouch does not flip him or hide the face.
+    ctx.translate(bx, by);
+    ctx.scale(1, sy);
+    ctx.drawImage(assets.baoge, -bw / 2, -BAOGE_H, bw, BAOGE_H);
+    ctx.restore();
+  }
+
+  function drawSwingFan() {
+    if (!assets.baoge || !play) return;
+    const bx = play.baoge.x;
+    const by = play.baoge.y + crouchDrop();
+    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+    const sy = 0.78;
+    // His right hand is on the viewer's left while he faces the camera.
+    const handX = bx - bw * 0.42;
+    const handY = by - BAOGE_H * sy * 0.46;
+    const swing = Math.sin(vizT * (Math.PI * 2 / 0.3)) * 0.85;
+    ctx.save();
+    ctx.translate(handX, handY);
+    ctx.rotate(0.95 + swing);
+    ctx.fillStyle = '#8a5a32';
+    ctx.strokeStyle = '#2a211c';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-7, 0);
+    ctx.lineTo(-7, 64);
+    ctx.lineTo(7, 64);
+    ctx.lineTo(7, 0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -18, 58, 46, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4e2b8';
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(90,60,30,0.45)';
+    ctx.lineWidth = 2;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 8, -30);
+      ctx.lineTo(i * 6, 14);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Extra flame tongues at the stove mouth, in front of the fire layer.
+    ctx.save();
+    const flick = 0.75 + 0.25 * Math.sin(vizT * 24);
+    ctx.globalAlpha = 0.85 * flick;
+    ctx.fillStyle = '#ffb13a';
+    ctx.beginPath();
+    ctx.moveTo(790, 640);
+    ctx.quadraticCurveTo(810, 560 - flick * 20, 840, 640);
+    ctx.fill();
+    ctx.fillStyle = '#ffe08a';
+    ctx.beginPath();
+    ctx.moveTo(808, 636);
+    ctx.quadraticCurveTo(822, 590, 836, 636);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSparks() {
+    if (!play || !play.sparks) return;
+    ctx.save();
+    for (const sp of play.sparks) {
+      const a = Math.max(0, sp.life / sp.max);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = a > 0.5 ? '#ffe08a' : '#ff7a32';
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, 3 + a * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawPreviewTag(x, y) {
+    ctx.save();
+    ctx.font = `bold 22px ${UI_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = '預覽';
+    const tw = ctx.measureText(text).width;
+    roundRect(ctx, x - tw / 2 - 8, y - 16, tw + 16, 32, 8);
+    ctx.fillStyle = 'rgba(20,10,8,0.9)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffe08a';
+    ctx.stroke();
+    ctx.fillStyle = '#ffe08a';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawCritter() {
+    if (!play || !play.critter) return;
+    const c = play.critter;
+    const p = critterPos(c);
+    const bob = Math.sin(vizT * 14) * 4;
+    ctx.save();
+    ctx.translate(p.x, p.y + bob);
+    if (c.kind === 'roach') {
+      ctx.fillStyle = '#6b3a22';
+      ctx.strokeStyle = '#24160f';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 46, 28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(36, -2, 18, 0, Math.PI * 2);
+      ctx.fillStyle = '#8a4e2c';
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = '#3a2418';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(44, -14);
+      ctx.quadraticCurveTo(62, -32, 70, -18);
+      ctx.moveTo(40, -16);
+      ctx.quadraticCurveTo(54, -36, 66, -26);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(42, -6, 5, 0, Math.PI * 2);
+      ctx.arc(52, -4, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#24160f';
+      ctx.beginPath();
+      ctx.arc(43, -6, 2.2, 0, Math.PI * 2);
+      ctx.arc(53, -4, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#3a2418';
+      ctx.lineWidth = 3;
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(-10 + i * 12, side * 18);
+          ctx.lineTo(-22 + i * 14, side * 34);
+          ctx.stroke();
+        }
+      }
+    } else {
+      ctx.fillStyle = '#d9d3cc';
+      ctx.strokeStyle = '#2a241c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(-6, 8, 40, 26, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(28, -4, 20, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f3b7c4';
+      ctx.beginPath();
+      ctx.arc(16, -24, 12, 0, Math.PI * 2);
+      ctx.arc(36, -26, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(24, -6, 5, 0, Math.PI * 2);
+      ctx.arc(36, -6, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#24160f';
+      ctx.beginPath();
+      ctx.arc(25, -6, 2.2, 0, Math.PI * 2);
+      ctx.arc(37, -6, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2a241c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(-40, 10);
+      ctx.quadraticCurveTo(-70, -10, -78, 16);
+      ctx.stroke();
+    }
+    ctx.restore();
+    drawPreviewTag(p.x, p.y - 58);
+  }
+
+  function drawEdgeFlash() {
+    if (!play || play.edgeFlash <= 0) return;
+    const a = Math.min(0.7, play.edgeFlash * 1.4);
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 24, 24, ${a})`;
+    ctx.lineWidth = 36;
+    ctx.strokeRect(18, 18, W - 36, H - 36);
+    ctx.restore();
   }
 
   function drawZone(z, label, fill, stroke, hot, icon) {
@@ -1825,9 +2411,57 @@
     }
     updateHudAvatar();
     bind();
+    installTestHook();
     showScreen('screen-title');
     state = 'title';
     requestAnimationFrame(loop);
+  }
+
+  function installTestHook() {
+    if (!/[?&]e2e=1(?:&|$)/.test(location.search)) return;
+    window.__baoji = {
+      snapshot() {
+        if (!play) return { state, baogeH: BAOGE_H / H };
+        const c = play.critter;
+        const pos = c ? critterPos(c) : null;
+        return {
+          state,
+          score: play.score,
+          combo: play.combo,
+          fanning,
+          baogeH: BAOGE_H / H,
+          baogeX: play.baoge.x,
+          baogeY: play.baoge.y,
+          avatar: avatarExpr,
+          fanSwing: Math.sin(vizT * (Math.PI * 2 / 0.3)),
+          edgeFlash: play.edgeFlash,
+          critter: c && { kind: c.kind, age: c.age, x: pos.x, y: pos.y, tap: critterTap(), targetId: c.targetId },
+          steamers: play.steamers.map((s) => ({
+            id: s.id,
+            state: s.state,
+            progress: s.progress,
+            unlocked: s.unlocked,
+            steam: s.state === 'cooking' ? cookSteam(s) : null,
+          })),
+          hint: $('touch-hint').textContent,
+          comboText: $('hud-combo').textContent,
+        };
+      },
+      spawn(kind) { spawnCritter(kind); },
+      miss() { resolveCritter(false); },
+      setScore(n) { play.score = n; updateHud(); },
+      setCombo(n) { play.combo = n; updateHud(); },
+      cook(id, p) {
+        const st = play.steamers.find((s) => s.id === id);
+        if (!st) return;
+        st.unlocked = true;
+        st.state = 'cooking';
+        st.progress = p;
+        st.lidOpen = 0;
+        st.revealAge = -1;
+        st.heartPlayed = false;
+      },
+    };
   }
 
   main();
