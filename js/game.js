@@ -30,13 +30,23 @@
   }
 
   const GRADE = {
-    HONGXIN: { id: '紅心', score: 300, cls: 'good' },
+    HONGXIN: { id: '紅心', score: 500, cls: 'good' },
     QIA: { id: '恰到好處', score: 200, cls: 'ok' },
-    WEIJIAO: { id: '微焦', score: 80, cls: 'warn' },
+    WEIJIAO: { id: '微焦', score: 50, cls: 'warn' },
     SHENG: { id: '生', score: 0, cls: 'bad' },
     JIAOHUI: { id: '焦毀', score: 0, cls: 'bad' },
     MEIJIE: { id: '沒揭到', score: 0, cls: 'bad' },
   };
+  const SHEN_HAND = 300;
+  const TIMELY_SERVE = 100;
+  const TIMELY_WINDOW = 2;
+  // Provisional end-grade cuts from the synthetic novice/expert runs in this
+  // branch. They are not real-player percentiles. Updated after that run.
+  // Provisional cuts from the 20+20 synthetic runs (seeds 1000–1019 and
+  // 2000–2019). Not real-player percentiles. In that set only the top expert
+  // run clears S; the rest of the expert cluster is A and the novice cluster
+  // splits between B and C.
+  const RANK_CUTS = { S: 490000, A: 150000, B: 10000 };
 
   // Avatar sheet: 2x3 grid on 1280x720
   const AVATAR = {
@@ -314,7 +324,15 @@
   }
 
   function multiplier(combo) {
-    return Math.min(3.0, 1 + 0.1 * combo);
+    return Math.min(5, 1 + 0.1 * combo);
+  }
+
+  function provisionalRank(score) {
+    if (RANK_CUTS.S <= 0) return '';
+    if (score >= RANK_CUTS.S) return 'S';
+    if (score >= RANK_CUTS.A) return 'A';
+    if (score >= RANK_CUTS.B) return 'B';
+    return 'C';
   }
 
   function heatWindows(heat) {
@@ -385,12 +403,15 @@
       drops: [],
       sparks: [],
       selectedId: 'a1',
+      act: null,
       critter: null,
       nextCritter: 30,
       edgeFlash: 0,
       events: [],
       eventCD: 8,
       milestones: { 5: false, 10: false, 15: false },
+      heartStreak: 0,
+      multiFlash: 0,
       stats: { hong: 0, qia: 0, wei: 0, fail: 0, serves: 0 },
       tutorialT: 6,
       rushT: 0,
@@ -422,10 +443,12 @@
     };
     setAvatar(AV.win, 99);
     setBust(AV.win);
-    $('results-score').textContent = String(play.score);
+    const rank = provisionalRank(play.score);
+    $('results-score').textContent = rank ? `${rank} · ${play.score}` : String(play.score);
     $('results-detail').innerHTML =
       `最高連擊 <b>${play.maxCombo}</b> · 紅心 ${play.stats.hong} · 恰到好處 ${play.stats.qia}<br>` +
-      `微焦 ${play.stats.wei} · 失敗 ${play.stats.fail} · 準時出餐 ${play.stats.serves}`;
+      `微焦 ${play.stats.wei} · 失敗 ${play.stats.fail} · 兩秒內出餐 ${play.stats.serves}` +
+      (rank ? `<br>本局評價 ${rank}（門檻來自合成試玩，不是真實玩家百分位）` : '');
     $('results-name').value = validName(playerName) ? playerName : '';
     setSubmitError('');
     setSubmitBusy(false);
@@ -554,6 +577,11 @@
     $('heat-val').textContent = String(Math.round(play.heat));
     const hint = $('touch-hint');
     if (hint) hint.textContent = currentAction();
+    const multiEl = $('hud-multi');
+    if (multiEl) {
+      const cookingN = play.steamers.filter((s) => s.state === 'cooking').length;
+      multiEl.classList.toggle('hidden', cookingN < 3 && play.multiFlash <= 0);
+    }
   }
 
   function currentAction() {
@@ -613,8 +641,32 @@
     play.baoge.ty = BAOGE_FLOOR;
   }
 
-  function crouchDrop() {
-    return fanning ? 28 : 0;
+  function beginAct(kind, dur, target) {
+    if (!play) return;
+    play.act = {
+      kind,
+      age: 0,
+      dur,
+      x: target ? target.x : 0,
+      y: target ? target.y : 0,
+    };
+  }
+
+  function fanPhase() {
+    return Math.sin(vizT * (Math.PI * 2 / 0.3));
+  }
+
+  function placeActionHint() {
+    const hint = $('touch-hint');
+    if (!hint || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const root = $('game-root').getBoundingClientRect();
+    if (!rect.width) return;
+    hint.style.left = `${rect.left - root.left + rect.width * 0.84}px`;
+    hint.style.top = `${rect.top - root.top + rect.height * 0.24}px`;
+    hint.style.right = 'auto';
+    hint.style.bottom = 'auto';
+    hint.style.transform = 'none';
   }
 
   function floatText(x, y, text, cls) {
@@ -639,18 +691,24 @@
   }
 
   function awardUncover(st, grade) {
-    let base = grade.score;
-    let extras = 0;
-    let comboBefore = play.combo;
+    const base = grade.score;
+    // Count while this steamer is still cooking, so it is included.
+    const cookingNow = play.steamers.filter((s) => s.state === 'cooking').length;
 
-    if (grade === GRADE.HONGXIN || grade === GRADE.QIA) {
-      play.combo += 1;
+    if (grade === GRADE.HONGXIN) {
+      play.combo += 2;
+      play.heartStreak += 1;
       setAvatar(AV.proud, 1.4);
+    } else if (grade === GRADE.QIA) {
+      play.combo += 1;
+      play.heartStreak = 0;
+      setAvatar(AV.proud, 1.2);
     } else if (grade === GRADE.WEIJIAO) {
-      // stays
+      play.heartStreak = 0;
       setAvatar(AV.fire, 1.0);
     } else {
       play.combo = 0;
+      play.heartStreak = 0;
       setAvatar(AV.panic, 1.6);
       play.stats.fail += 1;
     }
@@ -661,15 +719,17 @@
 
     play.maxCombo = Math.max(play.maxCombo, play.combo);
 
-    // shape bonus
-    if (grade.score > 0 && !st.overflowed) {
-      extras += 50;
-    }
-
+    const shen = (grade === GRADE.HONGXIN && play.heartStreak > 0 && play.heartStreak % 3 === 0)
+      ? SHEN_HAND : 0;
+    // PENDING DECISION — not a final rule. The old +50 (score > 0 and not
+    // overflowed) is still added into the pre-floor sum so it is neither
+    // deleted nor paid twice. See the PR notes for the open options.
+    const shape = (grade.score > 0 && !st.overflowed) ? 50 : 0;
+    const multi = (cookingNow >= 3 && (grade === GRADE.HONGXIN || grade === GRADE.QIA)) ? 1.5 : 1;
     const mul = multiplier(play.combo);
-    let hit = Math.floor((base + extras) * mul);
+    let hit = Math.floor((base + shen + shape) * mul * multi);
 
-    // combo milestones
+    // Milestones use >= so a +2 step can cross 5, 10, or 15. Each fires once.
     let bonus = 0;
     for (const m of [5, 10, 15]) {
       if (play.combo >= m && !play.milestones[m]) {
@@ -684,6 +744,8 @@
     }
     hit += bonus;
     play.score += hit;
+    if (multi > 1) play.multiFlash = 1.5;
+    st.shenHand = shen > 0;
 
     // Freeze the look and the score this function just computed. Drawing reads these;
     // it does not invent a reward.
@@ -696,16 +758,15 @@
     st.scale = 1;
     st.lidOpen = 0.22;
 
-    floatText(st.x + st.w / 2, st.y, `${grade.id} +${hit}`, grade.cls);
-    if (extras && grade.score > 0) {
-      floatText(st.x + st.w / 2, st.y + 36, '型完好 +50', 'bonus');
-    }
-    if (bonus) floatText(W / 2, H * 0.28, `連擊獎勵 +${bonus}`, 'good');
+    // One grade plate is drawn on the steamer. The +50 shape bonus stays in the
+    // score total and is not a second popup on top of the grade.
+    if (bonus) floatText(W * 0.5, 250, `連擊獎勵 +${bonus}`, 'good');
 
     st.lastGrade = grade;
     if (grade.score > 0) {
       st.state = 'serve';
       st.serveTimer = SERVE_WAIT;
+      st.timelyLeft = TIMELY_WINDOW;
       st.progress = 0;
     } else {
       st.state = 'cooldown';
@@ -726,18 +787,24 @@
     // serve the one with least remaining time
     ready.sort((a, b) => a.serveTimer - b.serveTimer);
     const st = ready[0];
-    const mul = multiplier(play.combo);
-    const add = Math.floor(30 * mul);
+    const timely = st.timelyLeft > 0;
+    const add = timely ? TIMELY_SERVE : 0;
     play.score += add;
-    play.stats.serves += 1;
+    if (timely) play.stats.serves += 1;
     spawnDrop(st);
+    beginAct('place', 0.6, {
+      x: ZONES.basket.x + ZONES.basket.w * 0.55,
+      y: ZONES.basket.y + ZONES.basket.h * 0.45,
+    });
     st.state = 'cooldown';
     st.cookTime = 0.35;
     st.serveTimer = 0;
     st.carried = false;
     st.carryAge = -1;
     setAvatar(AV.proud, 1.0);
-    floatText(ZONES.basket.x + ZONES.basket.w / 2, ZONES.basket.y + 40, `出餐 +${add}`, 'bonus');
+    if (add > 0) {
+      floatText(ZONES.basket.x + ZONES.basket.w / 2, ZONES.basket.y + 80, `出餐 +${add}`, 'bonus');
+    }
     updateHud();
   }
 
@@ -762,6 +829,7 @@
     play.selectedId = st.id;
     setAvatar(AV.fire, 0.8);
     floatText(st.x + st.w / 2, st.y + st.h / 2, '倒漿', 'ok');
+    beginAct('pour', 0.8, { x: st.x + st.w / 2, y: st.y + 20 });
     approachBaoge(st.x + st.w / 2);
   }
 
@@ -770,6 +838,7 @@
     play.selectedId = st.id;
     const grade = gradeFromProgress(st.progress, play.heat);
     awardUncover(st, grade);
+    beginAct('lid', 0.65, { x: st.x + st.w / 2, y: st.y + 10 });
     approachBaoge(st.x + st.w / 2);
   }
 
@@ -943,6 +1012,7 @@
     const c = play && play.critter;
     if (!c) return;
     const pos = critterPos(c);
+    if (tapped) beginAct('swat', 0.42, pos);
     play.critter = null;
     const elapsed = ROUND_SEC - play.timeLeft;
     play.nextCritter = Math.max(play.nextCritter, elapsed + 15 + Math.random() * 5);
@@ -954,6 +1024,8 @@
       if (st && (st.state === 'cooking' || st.state === 'serve')) ruinSteamer(st);
       play.score = Math.max(0, play.score - ROACH_PENALTY);
       play.combo = 0;
+      // Heart-streak vs cockroach miss is unresolved: a miss is not a non-heart
+      // grade, so the streak is left as-is until that call is decided.
       floatText(st ? st.x + st.w / 2 : pos.x, st ? st.y : pos.y, `-${ROACH_PENALTY}`, 'penalty');
     } else {
       stealOneKueh();
@@ -1104,7 +1176,8 @@
       play.heat += 22 * dt;
       firePulse += dt * 8;
       if (!(avatarExpr === AV_SCARED && avatarHold > 0) && avatarExpr !== AV.fire) setAvatar(AV.fire, 0.5);
-      if (Math.random() < 0.85) {
+      const stroke = Math.max(0, fanPhase());
+      if (stroke > 0.55 && Math.random() < 0.95) {
         play.sparks.push({
           x: 760 + Math.random() * 90,
           y: 600 + Math.random() * 30,
@@ -1131,7 +1204,6 @@
     for (const st of play.steamers) {
       if (!st.unlocked && (elapsed >= st.unlockAt || play.heat >= st.unlockAt + 10)) {
         st.unlocked = true;
-        floatText(st.x + st.w / 2, st.y + st.h / 2, `${st.name} 可用`, 'bonus');
       }
     }
 
@@ -1168,6 +1240,7 @@
         }
       } else if (st.state === 'serve') {
         st.serveTimer -= dt;
+        if (st.timelyLeft > 0) st.timelyLeft -= dt;
         if (st.serveTimer <= 0) {
           // missed serve — no points change, just lose the plate; combo unchanged for serve miss? Spec only resets on uncover fail. Clear.
           st.state = 'empty';
@@ -1266,7 +1339,15 @@
     // ALWAYS face camera — no flip to back. Slight horizontal lean only via position.
     b.facing = 1;
 
+    if (play.act) {
+      play.act.age += dt;
+      if (play.act.age >= play.act.dur) play.act = null;
+    }
+    if (play.multiFlash > 0) play.multiFlash -= dt;
+
     if (play.tutorialT > 0) play.tutorialT -= dt;
+
+    placeActionHint();
 
     updateHud();
   }
@@ -1314,14 +1395,11 @@
     const b = play.baoge;
     const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
     const head = b.y - BAOGE_H;
-    const drop = crouchDrop();
-    const baseX = b.x - bw * 0.42;
-    const baseY = head + BAOGE_H * 0.66 + drop;
-    const spread = 76;
+    const spread = 50;
     const offset = (index - (count - 1) / 2) * spread;
     return {
-      x: baseX + offset,
-      y: Math.max(head + BAOGE_H * 0.48 + drop, baseY),
+      x: b.x - bw * 0.02 + offset,
+      y: head + BAOGE_H * 0.60,
     };
   }
 
@@ -1361,9 +1439,11 @@
   function drawDonenessRing(st) {
     if (st.state !== 'cooking') return;
     const w = heatWindows(play.heat);
-    const cx = st.x + st.w / 2;
-    const cy = Math.max(168, st.y - 46);
-    const r = 30;
+    const mid = st.x + st.w / 2;
+    const side = mid < 1000 ? -1 : 1;
+    const cx = Math.max(48, Math.min(W - 48, mid + side * (st.w * 0.56)));
+    const cy = Math.max(210, st.y + 20);
+    const r = 26;
     ctx.save();
     ctx.lineCap = 'butt';
     ctx.beginPath();
@@ -1875,8 +1955,7 @@
   function drawGradeBanner(st) {
     if (!st.lastGrade || st.revealAge < 0 || st.revealAge > 1.2) return;
     const g = st.lastGrade;
-    const hit = Number.isFinite(st.lastHit) ? Math.floor(st.lastHit) : 0;
-    const text = `${g.id} +${hit}`;
+    const lines = st.shenHand ? [g.id, '神手'] : [g.id];
     let fade = 1;
     if (st.revealAge < 0.08) fade = st.revealAge / 0.08;
     else if (st.revealAge > 0.95) fade = Math.max(0, (1.2 - st.revealAge) / 0.25);
@@ -1887,9 +1966,9 @@
     ctx.font = `bold 32px ${UI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const tw = ctx.measureText(text).width;
-    const bw = tw + 28;
-    const bh = 46;
+    const tw = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const bw = tw + 36;
+    const bh = lines.length === 1 ? 52 : 84;
     roundRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, 12);
     ctx.fillStyle = 'rgba(16,8,6,0.92)';
     ctx.fill();
@@ -1897,7 +1976,9 @@
     ctx.strokeStyle = g.cls === 'bad' ? '#ff9d9d' : '#ffe08a';
     ctx.stroke();
     ctx.fillStyle = g.cls === 'bad' ? '#ffc1b8' : '#ffe08a';
-    ctx.fillText(text, cx, cy + 1);
+    lines.forEach((line, i) => {
+      ctx.fillText(line, cx, cy + (i - (lines.length - 1) / 2) * 32);
+    });
     ctx.restore();
   }
 
@@ -2042,7 +2123,8 @@
       ctx.globalCompositeOperation = 'screen';
       const heat = play ? play.heat : 30;
       const flare = play && play.flareT > 0 ? 0.2 : 0;
-      const flicker = 0.8 + 0.2 * Math.sin(firePulse * 2) + (fanning ? 0.12 : 0) + flare;
+      const stroke = fanning ? Math.max(0, fanPhase()) : 0;
+      const flicker = 0.8 + 0.2 * Math.sin(firePulse * 2) + stroke * 0.55 + flare;
       ctx.globalAlpha = Math.min(1, 0.5 + (heat / 100) * 0.55) * flicker;
       const ox = 40, oy = 30;
       ctx.drawImage(assets.fire, ox, oy, W, H);
@@ -2061,7 +2143,7 @@
         drawSteamer(st);
       }
       drawBaoge();
-      if (fanning) drawSwingFan();
+      drawActionPose();
       drawSparks();
 
       const action = currentAction();
@@ -2101,11 +2183,12 @@
       if (play.tutorialT > 0) {
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(W * 0.2, H * 0.82, W * 0.6, 70);
+        roundRect(ctx, 1500, 430, 390, 78, 12);
+        ctx.fill();
         ctx.fillStyle = '#ffe8c8';
-        ctx.font = `bold 28px ${UI_FONT}`;
+        ctx.font = `bold 22px ${UI_FONT}`;
         ctx.textAlign = 'center';
-        ctx.fillText('點蒸籠倒漿 → 按住右扇搧火 → 時機到點籠揭開 → 送到左紅籃', W / 2, H * 0.82 + 45);
+        ctx.fillText('倒漿 → 搧火 → 揭籠 → 出餐', 1695, 476);
         ctx.restore();
       }
     } else if (state === 'title' || state === 'boot') {
@@ -2116,69 +2199,273 @@
   function drawBaoge() {
     if (!assets.baoge) return;
     const bx = play ? play.baoge.x : BAOGE_HOME_X;
-    const by = (play ? play.baoge.y : BAOGE_FLOOR) + crouchDrop();
+    const by = play ? play.baoge.y : BAOGE_FLOOR;
     const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
-    const sy = fanning ? 0.78 : 1;
+    // Standing sprite only. There is no crouch sheet, so the body is never squashed.
+    ctx.drawImage(assets.baoge, bx - bw / 2, by - BAOGE_H, bw, BAOGE_H);
+  }
+
+  function bodyMetrics() {
+    const b = play.baoge;
+    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+    const head = b.y - BAOGE_H;
+    return {
+      x: b.x,
+      y: b.y,
+      bw,
+      head,
+      // Painted shoulders on the standing sheet. His right is the viewer's left.
+      sRx: b.x - bw * 0.16,
+      sRy: head + BAOGE_H * 0.30,
+      sLx: b.x + bw * 0.16,
+      sLy: head + BAOGE_H * 0.30,
+    };
+  }
+
+  function bendArm(sx, sy, hx, hy, bend) {
+    const mx = (sx + hx) / 2;
+    const my = (sy + hy) / 2;
+    const len = Math.hypot(hx - sx, hy - sy) || 1;
+    return {
+      x: mx + (-(hy - sy) / len) * bend,
+      y: my + ((hx - sx) / len) * bend,
+    };
+  }
+
+  function outsideFace(m, hx, hy) {
+    const faceL = m.x - m.bw * 0.16;
+    const faceR = m.x + m.bw * 0.16;
+    const faceB = m.head + BAOGE_H * 0.32;
+    if (hy < faceB && hx > faceL && hx < faceR) {
+      hx = hx < m.x ? faceL - 28 : faceR + 28;
+    }
+    return { x: hx, y: hy };
+  }
+
+  function drawPreviewArm(sx, sy, hx, hy, bend) {
+    const elbow = bendArm(sx, sy, hx, hy, bend);
     ctx.save();
-    // Feet stay put. Scale toward the floor so a crouch does not flip him or hide the face.
-    ctx.translate(bx, by);
-    ctx.scale(1, sy);
-    ctx.drawImage(assets.baoge, -bw / 2, -BAOGE_H, bw, BAOGE_H);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#2a211c';
+    ctx.lineWidth = 18;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(elbow.x, elbow.y, hx, hy);
+    ctx.stroke();
+    ctx.strokeStyle = '#7eb6de';
+    ctx.lineWidth = 12;
+    ctx.stroke();
+    ctx.fillStyle = '#f2c3a2';
+    ctx.strokeStyle = '#2a211c';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 
-  function drawSwingFan() {
-    if (!assets.baoge || !play) return;
-    const bx = play.baoge.x;
-    const by = play.baoge.y + crouchDrop();
-    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
-    const sy = 0.78;
-    // His right hand is on the viewer's left while he faces the camera.
-    const handX = bx - bw * 0.42;
-    const handY = by - BAOGE_H * sy * 0.46;
-    const swing = Math.sin(vizT * (Math.PI * 2 / 0.3)) * 0.85;
+  function markPreview(x, y) {
     ctx.save();
-    ctx.translate(handX, handY);
-    ctx.rotate(0.95 + swing);
+    ctx.font = `bold 16px ${UI_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2a211c';
+    ctx.fillStyle = '#ffe08a';
+    ctx.strokeText('預覽', x, y);
+    ctx.fillText('預覽', x, y);
+    ctx.restore();
+  }
+
+  function drawFanProp(hx, hy, rot) {
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(rot);
     ctx.fillStyle = '#8a5a32';
     ctx.strokeStyle = '#2a211c';
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(-7, 0);
-    ctx.lineTo(-7, 64);
-    ctx.lineTo(7, 64);
-    ctx.lineTo(7, 0);
+    ctx.moveTo(-7, 8);
+    ctx.lineTo(-7, 78);
+    ctx.lineTo(7, 78);
+    ctx.lineTo(7, 8);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
     ctx.beginPath();
-    ctx.ellipse(0, -18, 58, 46, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#f4e2b8';
+    ctx.moveTo(-8, 0);
+    ctx.quadraticCurveTo(-108, -20, -118, -78);
+    ctx.quadraticCurveTo(-20, -128, 96, -78);
+    ctx.quadraticCurveTo(108, -16, 8, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#f4e2b0';
     ctx.fill();
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(90,60,30,0.45)';
-    ctx.lineWidth = 2;
-    for (let i = -2; i <= 2; i++) {
+    ctx.strokeStyle = 'rgba(90,55,25,0.7)';
+    ctx.lineWidth = 3;
+    for (let i = -3; i <= 3; i++) {
       ctx.beginPath();
-      ctx.moveTo(i * 8, -30);
-      ctx.lineTo(i * 6, 14);
+      ctx.moveTo(i * 14, -8);
+      ctx.quadraticCurveTo(i * 16, -60, i * 12, -100);
       ctx.stroke();
     }
     ctx.restore();
-    // Extra flame tongues at the stove mouth, in front of the fire layer.
+  }
+
+  function drawLadle(hx, hy, tilt) {
     ctx.save();
-    const flick = 0.75 + 0.25 * Math.sin(vizT * 24);
-    ctx.globalAlpha = 0.85 * flick;
-    ctx.fillStyle = '#ffb13a';
+    ctx.translate(hx, hy);
+    ctx.rotate(-0.9 + tilt * 1.7);
+    ctx.strokeStyle = '#2a211c';
+    ctx.fillStyle = '#c9843c';
+    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(790, 640);
-    ctx.quadraticCurveTo(810, 560 - flick * 20, 840, 640);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 92);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -16, 42, 28, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#d5dee4';
     ctx.fill();
-    ctx.fillStyle = '#ffe08a';
+    ctx.stroke();
+    ctx.fillStyle = '#f3ddb0';
     ctx.beginPath();
-    ctx.moveTo(808, 636);
-    ctx.quadraticCurveTo(822, 590, 836, 636);
+    ctx.ellipse(0, -18, 28, 16, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+    if (tilt > 0.35) {
+      ctx.save();
+      ctx.strokeStyle = '#f3ddb0';
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(hx - 6, hy - 10);
+      ctx.quadraticCurveTo(hx - 70, hy + 40, hx - 120, hy + 130);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawTray(x, y, tilt) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+    ctx.fillStyle = '#c4843c';
+    ctx.strokeStyle = '#2a211c';
+    ctx.lineWidth = 4;
+    roundRect(ctx, -78, -16, 156, 32, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e0b56a';
+    ctx.fillRect(-70, -12, 140, 8);
+    ctx.restore();
+  }
+
+  function drawFanArm(m) {
+    const phase = fanPhase();
+    const hand = outsideFace(m, m.x + phase * 200, m.head + BAOGE_H * 0.62);
+    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, phase * 50);
+    drawFanProp(hand.x, hand.y, phase * 1.15);
+    markPreview(hand.x, hand.y - 40);
+  }
+
+  function drawPourArm(m, act) {
+    const lift = Math.min(1, act.age / 0.28);
+    const tilt = Math.min(1, Math.max(0, (act.age - 0.18) / 0.32));
+    const hand = outsideFace(m, m.x - 170, m.head + BAOGE_H * 0.34);
+    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, -30);
+    drawLadle(hand.x, hand.y, tilt);
+    markPreview(hand.x - 20, hand.y - 110);
+  }
+
+  function drawLidArm(m, act) {
+    const lift = Math.min(1, act.age / 0.22);
+    const hand = outsideFace(m, m.x - 190, m.head - 30 * lift);
+    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, -20);
+    ctx.save();
+    ctx.translate(hand.x, hand.y - 36);
+    ctx.rotate(-0.5);
+    ctx.fillStyle = '#d5dde3';
+    ctx.strokeStyle = '#2a211c';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 78, 28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -6, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#8d98a1';
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    markPreview(hand.x - 90, hand.y - 70);
+  }
+
+  function carryingNow() {
+    return play.steamers.some((s) => s.state === 'serve' && (s.carried || s.carryAge >= 0));
+  }
+
+  function trayPoint() {
+    const m = bodyMetrics();
+    return { x: m.x, y: m.head + BAOGE_H * 0.60 };
+  }
+
+  function drawCarryArms(m) {
+    const tray = trayPoint();
+    drawPreviewArm(m.sRx, m.sRy, tray.x - 58, tray.y, 20);
+    drawPreviewArm(m.sLx, m.sLy, tray.x + 58, tray.y, -20);
+    drawTray(tray.x, tray.y, 0);
+    markPreview(tray.x, tray.y - 36);
+  }
+
+  function drawPlaceArms(m, act) {
+    const u = Math.min(1, act.age / act.dur);
+    const tray = trayPoint();
+    const x = tray.x + (act.x - tray.x) * u * 0.72;
+    const y = tray.y + (act.y - tray.y) * u;
+    const tilt = u * 0.5;
+    drawPreviewArm(m.sRx, m.sRy, x - 50, y, 16);
+    drawPreviewArm(m.sLx, m.sLy, x + 40, y, -10);
+    drawTray(x, y, tilt);
+    markPreview(x, y - 34);
+  }
+
+  function drawSwatArm(m, act) {
+    const u = Math.min(1, act.age / 0.22);
+    const back = Math.max(0, (act.age - 0.22) / 0.2);
+    const sweep = Math.sin(Math.min(1, u) * Math.PI) * (1 - back);
+    const dir = act.x < m.x ? -1 : 1;
+    const sx = dir < 0 ? m.sRx : m.sLx;
+    const sy = dir < 0 ? m.sRy : m.sLy;
+    const hx = m.x + dir * (80 + sweep * 210);
+    const hy = m.sRy - 20 - sweep * 90;
+    const hand = outsideFace(m, hx, hy);
+    drawPreviewArm(sx, sy, hand.x, hand.y, dir * -36);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,244,210,0.9)';
+    ctx.lineWidth = 16;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(m.x + dir * 40, sy - 80, hand.x, hand.y);
+    ctx.stroke();
+    ctx.restore();
+    markPreview(hand.x, hand.y - 36);
+  }
+
+  function drawActionPose() {
+    if (!play || !assets.baoge) return;
+    const m = bodyMetrics();
+    const act = play.act && play.act.age < play.act.dur ? play.act : null;
+    const rightBusy = act && (act.kind === 'pour' || act.kind === 'lid' || act.kind === 'place');
+    if (fanning && !rightBusy) drawFanArm(m);
+    if (act && act.kind === 'pour') drawPourArm(m, act);
+    else if (act && act.kind === 'lid') drawLidArm(m, act);
+    else if (act && act.kind === 'place') drawPlaceArms(m, act);
+    else if (!act && carryingNow()) drawCarryArms(m);
+    if (act && act.kind === 'swat') drawSwatArm(m, act);
   }
 
   function drawSparks() {
@@ -2433,7 +2720,13 @@
           baogeX: play.baoge.x,
           baogeY: play.baoge.y,
           avatar: avatarExpr,
-          fanSwing: Math.sin(vizT * (Math.PI * 2 / 0.3)),
+          fanSwing: fanPhase(),
+          pose: (play.act && play.act.age < play.act.dur && play.act.kind)
+            || (fanning ? 'fan' : (carryingNow() ? 'carry' : 'idle')),
+          heartStreak: play.heartStreak,
+          multiFlash: play.multiFlash,
+          timeLeft: play.timeLeft,
+          heat: play.heat,
           edgeFlash: play.edgeFlash,
           critter: c && { kind: c.kind, age: c.age, x: pos.x, y: pos.y, tap: critterTap(), targetId: c.targetId },
           steamers: play.steamers.map((s) => ({
@@ -2460,6 +2753,92 @@
         st.lidOpen = 0;
         st.revealAge = -1;
         st.heartPlayed = false;
+      },
+      step(dt) { update(dt); },
+      actPour(id) {
+        const st = play.steamers.find((s) => s.id === id);
+        if (st) pourSteamer(st);
+      },
+      actUncover(id) {
+        const st = play.steamers.find((s) => s.id === id);
+        if (st) uncoverSteamer(st);
+      },
+      actServe() { tryServe(); },
+      setFan(on) { fanning = !!on; },
+      swat() { if (play.critter) resolveCritter(true); },
+      seed(n) {
+        let s = n >>> 0;
+        Math.random = () => {
+          s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+          return s / 4294967296;
+        };
+      },
+      simulate(style) {
+        startRound();
+        const dt = 0.05;
+        let guard = 0;
+        while (play && play.timeLeft > 0 && state === 'play' && guard < 4000) {
+          guard += 1;
+          const t = ROUND_SEC - play.timeLeft;
+          if (style === 'expert') fanning = play.heat < 38;
+          else fanning = (Math.floor(t / 1.6) % 3 === 0) && play.heat < 62;
+          update(dt);
+          if (state !== 'play' || !play) break;
+          const cooking = play.steamers.filter((s) => s.unlocked && s.state === 'cooking');
+          const empty = play.steamers.filter((s) => s.unlocked && s.state === 'empty');
+          let want = 1;
+          if (style === 'expert') want = t > 48 ? 4 : t > 22 ? 3 : 2;
+          else if (t > 28 && Math.random() < 0.45) want = 2;
+          if (cooking.length < want && empty.length) {
+            const pot = empty[0];
+            pot._react = null;
+            pot._planCook = null;
+            pot._planServe = null;
+            pourSteamer(pot);
+          }
+          for (const st of play.steamers) {
+            if (st.state !== 'cooking' && st.state !== 'serve') {
+              st._react = null;
+              st._planCook = null;
+            }
+            if (st.state === 'cooking' && style === 'novice') {
+              const w = heatWindows(play.heat);
+              if (st._planCook == null) st._planCook = Math.random();
+              const p = st.progress;
+              let due = false;
+              if (st._planCook < 0.35) due = p >= w.ideal + w.hong && p <= w.ideal + w.qia;
+              else if (st._planCook < 0.7) due = p >= w.ideal + w.qia && p <= w.ideal + w.wei;
+              else if (st._planCook < 0.85) due = p >= 0.28 && p < w.ideal - w.qia;
+              else due = p > w.ideal + w.wei;
+              if (due) uncoverSteamer(st);
+            }
+            if (st.state === 'cooking' && style === 'expert') {
+              const w = heatWindows(play.heat);
+              if (st._react == null && st.progress >= w.ideal - w.hong * 0.15) {
+                st._react = 0.08 + Math.random() * 0.06;
+              }
+              if (st._react != null) {
+                st._react -= dt;
+                if (st._react <= 0) uncoverSteamer(st);
+              }
+            }
+            if (st.state === 'serve' && st._planServe == null) {
+              st._planServe = style === 'expert'
+                ? 0.15 + Math.random() * 0.45
+                : (Math.random() < 0.55 ? 0.5 + Math.random() * 1.2 : 2.2 + Math.random() * 1.5);
+            }
+            if (st.state === 'serve' && (SERVE_WAIT - st.serveTimer) >= st._planServe) tryServe();
+          }
+          if (play.critter && style === 'expert' && play.critter.age > 0.35) resolveCritter(true);
+          if (play.critter && style === 'novice' && play.critter.age > 1.5 && Math.random() < 0.04) resolveCritter(true);
+        }
+        return {
+          score: play ? play.score : 0,
+          maxCombo: play ? play.maxCombo : 0,
+          stats: play ? { ...play.stats } : null,
+          timeLeft: play ? play.timeLeft : null,
+          state,
+        };
       },
     };
   }
