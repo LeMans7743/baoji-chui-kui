@@ -70,14 +70,18 @@
     fan: { x: 1120, y: 580, w: 340, h: 280, label: '搧火' },
   };
 
-  // Steamers unlock over heat/time. Positions over stove / bamboo.
+  // Steamers unlock over heat/time. Spread across the stove so each kueh reads on its own.
+  // Hit size is the visible pot; the cake is drawn at KUEH_WIDTH_RATIO of that width.
+  const KUEH_WIDTH_RATIO = 0.72;
+  const BAOGE_FLOOR = 1000;
+  const BAOGE_H = Math.round(H * 0.30);
   const STEAMER_DEFS = [
-    { id: 'a1', name: '鋁籠·左', x: 720, y: 355, w: 190, h: 145, unlockAt: 0, kind: 'alum' },
-    { id: 'a2', name: '鋁籠·中下', x: 930, y: 375, w: 200, h: 155, unlockAt: 0, kind: 'alum' },
-    { id: 'a3', name: '鋁籠·中上', x: 945, y: 245, w: 175, h: 130, unlockAt: 18, kind: 'alum' },
-    { id: 'b1', name: '竹籠·下', x: 1265, y: 455, w: 210, h: 115, unlockAt: 28, kind: 'bamboo' },
-    { id: 'b2', name: '竹籠·中', x: 1275, y: 350, w: 200, h: 105, unlockAt: 42, kind: 'bamboo' },
-    { id: 'b3', name: '竹籠·上', x: 1285, y: 250, w: 185, h: 100, unlockAt: 55, kind: 'bamboo' },
+    { id: 'a1', name: '鋁籠·左', x: 180, y: 400, w: 310, h: 170, unlockAt: 0, kind: 'alum' },
+    { id: 'a2', name: '鋁籠·中下', x: 560, y: 408, w: 300, h: 170, unlockAt: 0, kind: 'alum' },
+    { id: 'a3', name: '鋁籠·中上', x: 545, y: 205, w: 300, h: 160, unlockAt: 18, kind: 'alum' },
+    { id: 'b1', name: '竹籠·下', x: 980, y: 412, w: 310, h: 158, unlockAt: 28, kind: 'bamboo' },
+    { id: 'b2', name: '竹籠·中', x: 1220, y: 214, w: 280, h: 156, unlockAt: 42, kind: 'bamboo' },
+    { id: 'b3', name: '竹籠·上', x: 890, y: 198, w: 280, h: 158, unlockAt: 55, kind: 'bamboo' },
   ];
 
   let state = 'boot'; // boot|title|play|results|boards
@@ -94,6 +98,7 @@
   let firePulse = 0;
   let fanning = false;
   let pointers = new Map();
+  let vizT = 0;
 
   function loadImage(src) {
     return new Promise((resolve, reject) => {
@@ -335,6 +340,15 @@
       flash: 0,
       lastGrade: null,
       unlocked: def.unlockAt <= 0,
+      // Visual only — scoring still reads progress / grade.score.
+      shownProgress: 0,
+      lastHit: 0,
+      revealAge: -1,
+      carryAge: -1,
+      carried: false,
+      puffLife: 0,
+      scale: 1,
+      lidOpen: 0.62,
     };
   }
 
@@ -358,7 +372,9 @@
       heat: 28,
       heatVel: 0,
       steamers: STEAMER_DEFS.map(makeSteamer),
-      baoge: { x: 960, y: 780, tx: 960, ty: 780, facing: 1 },
+      baoge: { x: 960, y: BAOGE_FLOOR, tx: 960, ty: BAOGE_FLOOR, facing: 1 },
+      drops: [],
+      selectedId: 'a1',
       events: [],
       eventCD: 8,
       milestones: { 5: false, 10: false, 15: false },
@@ -522,6 +538,62 @@
     const heatPct = Math.max(0, Math.min(100, play.heat));
     $('heat-fill').style.width = `${heatPct}%`;
     $('heat-val').textContent = String(Math.round(play.heat));
+    const hint = $('touch-hint');
+    if (hint) hint.textContent = currentAction();
+  }
+
+  function currentAction() {
+    if (!play) return '倒漿';
+    const open = play.steamers.filter((s) => s.unlocked);
+    if (open.some((s) => s.state === 'serve')) return '出餐';
+    const cooking = open.filter((s) => s.state === 'cooking');
+    if (cooking.length) {
+      const ready = cooking.some((s) => {
+        if (play.burstTarget === s.id) return true;
+        const g = gradeFromProgress(s.progress, play.heat);
+        return g.score > 0 || g === GRADE.JIAOHUI;
+      });
+      return ready ? '揭籠' : '搧火';
+    }
+    return '倒漿';
+  }
+
+  function stageInfo(p) {
+    if (p < 0.18) return { key: 'liquid', label: '漿液', icon: 'wave' };
+    if (p < 0.42) return { key: 'setting', label: '凝固', icon: 'half' };
+    if (p < 0.74) return { key: 'cooked', label: '熟', icon: 'cake' };
+    if (p < 0.96) return { key: 'scorch', label: '微焦', icon: 'tri' };
+    return { key: 'burnt', label: '焦黑', icon: 'cross' };
+  }
+
+  function focusSteamer() {
+    if (!play) return null;
+    if (play.burstTarget) {
+      const burst = play.steamers.find((s) => s.id === play.burstTarget && s.unlocked && s.state === 'cooking');
+      if (burst) return burst;
+    }
+    if (play.selectedId) {
+      const sel = play.steamers.find((s) => s.id === play.selectedId && s.unlocked && s.state !== 'cooldown');
+      if (sel) return sel;
+    }
+    const action = currentAction();
+    if (action === '揭籠') {
+      const cooking = play.steamers.filter((s) => s.unlocked && s.state === 'cooking');
+      const w = heatWindows(play.heat);
+      cooking.sort((a, b) => Math.abs(a.progress - w.ideal) - Math.abs(b.progress - w.ideal));
+      return cooking[0] || null;
+    }
+    if (action === '出餐') {
+      const ready = play.steamers.filter((s) => s.state === 'serve');
+      ready.sort((a, b) => a.serveTimer - b.serveTimer);
+      return ready[0] || null;
+    }
+    return play.steamers.find((s) => s.unlocked && s.state === 'empty') || null;
+  }
+
+  function approachBaoge(x) {
+    play.baoge.tx = Math.max(640, Math.min(1280, x));
+    play.baoge.ty = BAOGE_FLOOR;
   }
 
   function floatText(x, y, text, cls) {
@@ -592,6 +664,17 @@
     hit += bonus;
     play.score += hit;
 
+    // Freeze the look and the score this function just computed. Drawing reads these;
+    // it does not invent a reward.
+    st.shownProgress = st.progress;
+    st.lastHit = hit;
+    st.revealAge = 0;
+    st.puffLife = 0.9;
+    st.carryAge = -1;
+    st.carried = false;
+    st.scale = 1;
+    st.lidOpen = 0.22;
+
     floatText(st.x + st.w / 2, st.y, `${grade.id} +${hit}`, grade.cls);
     if (extras && grade.score > 0) {
       floatText(st.x + st.w / 2, st.y + 36, '型完好 +50', 'bonus');
@@ -626,9 +709,12 @@
     const add = Math.floor(30 * mul);
     play.score += add;
     play.stats.serves += 1;
+    spawnDrop(st);
     st.state = 'cooldown';
     st.cookTime = 0.35;
     st.serveTimer = 0;
+    st.carried = false;
+    st.carryAge = -1;
     setAvatar(AV.proud, 1.0);
     floatText(ZONES.basket.x + ZONES.basket.w / 2, ZONES.basket.y + 40, `出餐 +${add}`, 'bonus');
     updateHud();
@@ -638,21 +724,29 @@
     if (st.state !== 'empty' || !st.unlocked) return;
     st.state = 'cooking';
     st.progress = 0.02;
+    st.shownProgress = 0.02;
     st.overflowed = false;
     st.cookTime = 0;
+    st.revealAge = -1;
+    st.carryAge = -1;
+    st.carried = false;
+    st.puffLife = 0;
+    st.scale = 1;
+    st.lidOpen = 0.28;
+    st.lastGrade = null;
+    st.lastHit = 0;
+    play.selectedId = st.id;
     setAvatar(AV.fire, 0.8);
     floatText(st.x + st.w / 2, st.y + st.h / 2, '倒漿', 'ok');
-    // walk toward steamer
-    play.baoge.tx = st.x + st.w / 2;
-    play.baoge.ty = Math.min(820, st.y + st.h + 80);
+    approachBaoge(st.x + st.w / 2);
   }
 
   function uncoverSteamer(st) {
     if (st.state !== 'cooking') return;
+    play.selectedId = st.id;
     const grade = gradeFromProgress(st.progress, play.heat);
     awardUncover(st, grade);
-    play.baoge.tx = st.x + st.w / 2;
-    play.baoge.ty = Math.min(820, st.y + st.h + 80);
+    approachBaoge(st.x + st.w / 2);
   }
 
   function hitTest(x, y) {
@@ -691,24 +785,22 @@
     if (!hit) return;
     if (hit.type === 'fan') {
       fanning = true;
-      play.baoge.tx = ZONES.fan.x + 40;
-      play.baoge.ty = 780;
+      approachBaoge(ZONES.fan.x + 40);
       setAvatar(AV.fire, 0.6);
     } else if (hit.type === 'basket') {
-      play.baoge.tx = ZONES.basket.x + ZONES.basket.w / 2;
-      play.baoge.ty = 820;
+      approachBaoge(ZONES.basket.x + ZONES.basket.w - 20);
       tryServe();
     } else if (hit.type === 'steamer') {
       const st = hit.st;
+      play.selectedId = st.id;
       if (st.state === 'empty') pourSteamer(st);
       else if (st.state === 'cooking') uncoverSteamer(st);
       else if (st.state === 'serve') {
         floatText(st.x + st.w / 2, st.y, '先送到左邊紅籃出餐！', 'warn');
-        play.baoge.tx = ZONES.basket.x + ZONES.basket.w / 2;
+        approachBaoge(ZONES.basket.x + ZONES.basket.w - 20);
       }
     } else if (hit.type === 'walk') {
-      play.baoge.tx = hit.x;
-      play.baoge.ty = Math.max(700, Math.min(900, hit.y));
+      approachBaoge(hit.x);
     }
   }
 
@@ -741,6 +833,9 @@
         } else if (st.state === 'serve') {
           // leftover serve without bonus — just clear
           st.state = 'empty';
+          st.carried = false;
+          st.carryAge = -1;
+          st.revealAge = -1;
         }
       }
       endRound();
@@ -807,6 +902,9 @@
         if (st.serveTimer <= 0) {
           // missed serve — no points change, just lose the plate; combo unchanged for serve miss? Spec only resets on uncover fail. Clear.
           st.state = 'empty';
+          st.carried = false;
+          st.carryAge = -1;
+          st.revealAge = -1;
           floatText(st.x + st.w / 2, st.y, '出餐逾時', 'warn');
         }
       } else if (st.state === 'cooldown') {
@@ -815,9 +913,17 @@
           st.state = 'empty';
           st.progress = 0;
           st.overflowed = false;
+          st.revealAge = -1;
+          st.shownProgress = 0;
+          st.lidOpen = 0.62;
         }
       }
       if (st.flash > 0) st.flash -= dt;
+      stepSteamerVisual(st, dt);
+    }
+    if (play.drops) {
+      for (const d of play.drops) d.age += dt;
+      play.drops = play.drops.filter((d) => d.age < d.dur + 0.42);
     }
 
     // Events at high heat
@@ -885,10 +991,96 @@
     updateHud();
   }
 
+  function stepSteamerVisual(st, dt) {
+    if (st.revealAge >= 0) st.revealAge += dt;
+    if (st.puffLife > 0) st.puffLife -= dt;
+    if (st.state === 'serve' && st.revealAge > 0.38 && st.carryAge < 0) st.carryAge = 0;
+    if (st.carryAge >= 0 && !st.carried) {
+      st.carryAge += dt;
+      if (st.carryAge >= 0.55) st.carried = true;
+    }
+    if (st.revealAge >= 0 && st.revealAge < 0.5) {
+      const t = st.revealAge;
+      if (t < 0.16) st.scale = 1 + (t / 0.16) * 0.42;
+      else if (t < 0.32) st.scale = 1.42 - ((t - 0.16) / 0.16) * 0.5;
+      else st.scale = 0.92 + ((t - 0.32) / 0.18) * 0.08;
+      st.lidOpen = Math.min(1, 0.22 + t / 0.30);
+    } else if (st.revealAge >= 0.5) {
+      st.scale = 1;
+      st.lidOpen = 1;
+    } else if (st.state === 'cooking') {
+      st.scale = 1;
+      st.lidOpen = 0.30;
+    } else if (st.state === 'empty') {
+      st.scale = 1;
+      st.lidOpen = 0.62;
+    }
+  }
+
+  function spawnDrop(st) {
+    const pos = kuehAnchor(st);
+    if (!play.drops) play.drops = [];
+    play.drops.push({
+      x: pos.x,
+      y: pos.y,
+      look: st.shownProgress,
+      age: 0,
+      dur: 0.5,
+      seed: st.id,
+    });
+  }
+
+  function handPoint(index, count) {
+    const b = play.baoge;
+    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+    const head = b.y - BAOGE_H;
+    const baseX = b.x - bw * 0.46;
+    const baseY = head + BAOGE_H * 0.62;
+    const spread = 76;
+    const offset = (index - (count - 1) / 2) * spread;
+    return {
+      x: baseX + offset,
+      y: Math.max(head + BAOGE_H * 0.50, baseY),
+    };
+  }
+
+  function kuehAnchor(st) {
+    const cx = st.x + st.w / 2;
+    const cy = st.y + st.h * 0.48;
+    if (st.state !== 'serve' || !play) return { x: cx, y: cy };
+    const ready = play.steamers.filter((s) => s.state === 'serve');
+    ready.sort((a, b) => a.serveTimer - b.serveTimer);
+    const index = Math.max(0, ready.findIndex((s) => s.id === st.id));
+    const hand = handPoint(index, ready.length);
+    if (st.carried) return hand;
+    if (st.carryAge >= 0) {
+      const u = Math.min(1, st.carryAge / 0.55);
+      const ease = u * u * (3 - 2 * u);
+      const arc = Math.sin(ease * Math.PI) * 80;
+      return {
+        x: cx + (hand.x - cx) * ease,
+        y: cy + (hand.y - cy) * ease - arc,
+      };
+    }
+    return { x: cx, y: cy };
+  }
+
+  function hash01(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function seedOf(id) {
+    let h = 2166136261;
+    const s = String(id || 'k');
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h >>> 0;
+  }
+
   function drawDonenessMeter(st) {
     if (st.state !== 'cooking') return;
     const w = heatWindows(play.heat);
-    const mx = st.x, my = st.y - 28, mw = st.w, mh = 14;
+    const mx = st.x + 10, my = st.y + st.h + 8, mw = st.w - 20, mh = 12;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(mx, my, mw, mh);
@@ -905,10 +1097,552 @@
     ctx.restore();
   }
 
+  const UI_FONT = '"WenQuanYi Micro Hei", "Droid Sans Fallback", sans-serif';
+
+  function chipFor(st) {
+    if (st.state === 'empty') return { icon: 'arrow', label: '倒漿' };
+    if (st.state === 'cooking') {
+      const stage = stageInfo(st.progress);
+      const verb = (st.flash > 0) ? '快揭' : '揭籠';
+      return { icon: stage.icon, label: `${stage.label}·${verb}` };
+    }
+    if (st.state === 'serve') return { icon: 'basket', label: `出餐 ${Math.max(0, st.serveTimer).toFixed(1)}s` };
+    return { icon: 'dot', label: '…' };
+  }
+
+  function drawIcon(kind, x, y, s) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineWidth = Math.max(2.5, s * 0.12);
+    ctx.strokeStyle = '#ffe08a';
+    ctx.fillStyle = '#ffe08a';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const r = s * 0.36;
+    if (kind === 'wave') {
+      ctx.beginPath();
+      ctx.moveTo(-r, r * 0.15);
+      ctx.bezierCurveTo(-r * 0.3, -r, r * 0.15, -r, 0, 0);
+      ctx.bezierCurveTo(r * 0.35, r, r, r * 0.2, r, -r * 0.35);
+      ctx.stroke();
+    } else if (kind === 'half') {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r, 0);
+      ctx.arc(0, 0, r, Math.PI, 0, false);
+      ctx.fill();
+    } else if (kind === 'cake') {
+      roundRect(ctx, -r, -r * 0.65, r * 2, r * 1.35, 4);
+      ctx.fillStyle = '#f4e2c6';
+      ctx.fill();
+      ctx.strokeStyle = '#3a2a1c';
+      ctx.stroke();
+      ctx.fillStyle = '#c17d38';
+      ctx.beginPath();
+      ctx.arc(-r * 0.28, 0, r * 0.2, 0, Math.PI * 2);
+      ctx.arc(r * 0.32, -r * 0.12, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (kind === 'tri') {
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r, r * 0.82);
+      ctx.lineTo(-r, r * 0.82);
+      ctx.closePath();
+      ctx.fill();
+    } else if (kind === 'cross') {
+      ctx.beginPath();
+      ctx.moveTo(-r, -r); ctx.lineTo(r, r);
+      ctx.moveTo(r, -r); ctx.lineTo(-r, r);
+      ctx.stroke();
+    } else if (kind === 'arrow') {
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(0, r * 0.9);
+      ctx.moveTo(-r * 0.7, r * 0.25);
+      ctx.lineTo(0, r * 0.9);
+      ctx.lineTo(r * 0.7, r * 0.25);
+      ctx.stroke();
+    } else if (kind === 'basket') {
+      roundRect(ctx, -r, -r * 0.15, r * 2, r * 1.15, 3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r, r * 0.15); ctx.lineTo(r, r * 0.15);
+      ctx.moveTo(-r * 0.4, -r * 0.15); ctx.lineTo(-r * 0.4, r);
+      ctx.moveTo(r * 0.4, -r * 0.15); ctx.lineTo(r * 0.4, r);
+      ctx.stroke();
+    } else if (kind === 'fan') {
+      ctx.beginPath();
+      ctx.arc(0, r * 0.45, r, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, r * 0.15);
+      ctx.lineTo(0, r);
+      ctx.stroke();
+    } else if (kind === 'lid') {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r, r * 0.42, -0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(r * 0.1, -r * 0.05, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawChip(cx, cy, icon, label) {
+    ctx.save();
+    ctx.font = `bold 30px ${UI_FONT}`;
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(label).width;
+    const iconS = 30;
+    const padX = 12;
+    const bw = tw + iconS + padX * 3;
+    const bh = 42;
+    const x = cx - bw / 2;
+    const y = cy - bh / 2;
+    roundRect(ctx, x, y, bw, bh, 21);
+    ctx.fillStyle = 'rgba(24,12,8,0.9)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#f0d7a2';
+    ctx.stroke();
+    drawIcon(icon, x + padX + iconS / 2, cy, iconS);
+    ctx.fillStyle = '#fff6e4';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, x + padX * 2 + iconS, cy + 1);
+    ctx.restore();
+  }
+
+  function drawLid(cx, cy, rx, ry, open, kind) {
+    const slide = Math.max(0, Math.min(1, open));
+    ctx.save();
+    ctx.translate(cx + slide * rx * 0.72, cy - ry * (1.05 + slide * 0.85));
+    ctx.rotate(-0.08 - slide * 0.7);
+    const top = kind === 'bamboo' ? '#f3cc78' : '#f4f8fa';
+    const side = kind === 'bamboo' ? '#c8883a' : '#aeb9c2';
+    ctx.fillStyle = side;
+    ctx.beginPath();
+    ctx.ellipse(0, ry * 0.16, rx * 0.74, ry * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#2a241c';
+    ctx.stroke();
+    ctx.fillStyle = top;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx * 0.74, ry * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (kind === 'bamboo') {
+      ctx.strokeStyle = 'rgba(90,48,16,0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx * 0.48, ry * 0.24, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, -ry * 0.02, Math.max(7, rx * 0.1), 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#8a4e22' : '#5d6a72';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2a241c';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPotBody(cx, cy, rx, ry, kind) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    if (kind === 'bamboo') {
+      const g = ctx.createLinearGradient(cx - rx, cy, cx + rx, cy);
+      g.addColorStop(0, '#c9843a');
+      g.addColorStop(0.35, '#f0c36a');
+      g.addColorStop(0.7, '#e0a24a');
+      g.addColorStop(1, '#b8742e');
+      ctx.fillStyle = g;
+    } else {
+      const g = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+      g.addColorStop(0, '#f7fbfc');
+      g.addColorStop(0.4, '#d5dee4');
+      g.addColorStop(1, '#8d9aa3');
+      ctx.fillStyle = g;
+    }
+    ctx.fill();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#241c16';
+    ctx.stroke();
+    if (kind === 'bamboo') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(70,36,12,0.4)';
+      ctx.lineWidth = 3;
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * rx * 0.24, cy - ry);
+        ctx.lineTo(cx + i * rx * 0.24, cy + ry);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.8, ry * 0.74, 0, 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#f0c27a' : '#d5dee4';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2a241c';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.08, rx * 0.62, ry * 0.46, 0, 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#e2b15e' : '#c3ced6';
+    ctx.fill();
+  }
+
+  function drawFrontRim(cx, cy, rx, ry, kind) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.8, ry * 0.74, 0, 0.12 * Math.PI, 0.88 * Math.PI);
+    ctx.strokeStyle = kind === 'bamboo' ? '#f6d7a0' : '#f4f7f8';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+  }
+
+  // Code-drawn steam. The reserved steam PNG is fully transparent, so it cannot tint the scene.
+  function drawWisps(cx, cy, strength, phase) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const ph = phase * 1.25 + i * 1.7;
+      const x = cx + (i - 1) * 26 + Math.sin(ph) * 8;
+      ctx.globalAlpha = (0.55 + 0.4 * strength) * (0.8 + 0.2 * Math.sin(ph));
+      ctx.strokeStyle = '#fffaf3';
+      ctx.lineWidth = 11;
+      ctx.beginPath();
+      ctx.moveTo(x, cy);
+      ctx.bezierCurveTo(x - 24, cy - 26, x + 28, cy - 48, x - 6, cy - 74 - i * 12);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(90,70,55,0.28)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawPuff(cx, cy, life) {
+    const u = 1 - Math.max(0, Math.min(1, life / 0.9));
+    ctx.save();
+    for (let i = 0; i < 6; i++) {
+      const ang = -Math.PI * 0.5 + (i - 2.5) * 0.42;
+      const dist = 16 + u * 78;
+      const x = cx + Math.cos(ang) * dist;
+      const y = cy + Math.sin(ang) * dist * 0.72;
+      ctx.globalAlpha = (1 - u) * 0.92;
+      ctx.fillStyle = '#fffaf4';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 26 + u * 36, 16 + u * 24, ang, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(70,54,40,0.35)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawKueh(cx, cy, w, h, p, scale, id) {
+    const info = stageInfo(Math.max(0, p || 0));
+    const seed = seedOf(id);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale || 1, scale || 1);
+    ctx.lineJoin = 'round';
+    if (info.key === 'liquid' || info.key === 'setting') {
+      const setting = info.key === 'setting';
+      const ew = w * 0.5;
+      const eh = h * (setting ? 0.46 : 0.34);
+      ctx.beginPath();
+      ctx.ellipse(0, eh * 0.15, ew, eh, 0, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(-ew * 0.25, -eh * 0.2, 6, 0, 0, ew);
+      g.addColorStop(0, '#fff8e8');
+      g.addColorStop(0.55, setting ? '#f0d2a4' : '#f7e3bf');
+      g.addColorStop(1, setting ? '#e2bc84' : '#f0d3a0');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = Math.max(5, w * 0.04);
+      ctx.strokeStyle = '#2e2418';
+      ctx.stroke();
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(0, eh * 0.15, ew - 3, eh - 3, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.beginPath();
+      const amp = (setting ? 0.35 : 1) * eh * 0.28;
+      const baseY = eh * (setting ? 0.02 : -0.02);
+      ctx.moveTo(-ew, eh);
+      for (let x = -ew; x <= ew; x += 5) {
+        const yy = baseY + Math.sin(x * 0.09 + vizT * 5.2 + (seed % 7)) * amp;
+        ctx.lineTo(x, yy);
+      }
+      ctx.lineTo(ew, eh);
+      ctx.closePath();
+      ctx.fillStyle = setting ? 'rgba(255,248,236,0.35)' : 'rgba(255,252,245,0.62)';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.ellipse(-ew * 0.28, -eh * 0.05, ew * 0.22, eh * 0.16, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      if (setting) {
+        ctx.fillStyle = '#d7a15a';
+        for (let i = 0; i < 3; i++) {
+          const px = (hash01(seed + i * 4) - 0.5) * w * 0.5;
+          const py = (hash01(seed + i * 9) - 0.5) * eh * 0.5;
+          ctx.beginPath();
+          ctx.ellipse(px, py, 4, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else {
+      const burnt = info.key === 'burnt';
+      const scorch = info.key === 'scorch' || burnt;
+      const top = burnt ? '#221c18' : (scorch ? '#e7c79a' : '#f6e6cc');
+      const side = burnt ? '#14110f' : (scorch ? '#c48a4e' : '#e4cfae');
+      const spot = burnt ? '#3a312b' : (scorch ? '#7a4520' : '#c4843c');
+      const slabH = h * 0.72;
+      const sideH = h * 0.22;
+      roundRect(ctx, -w / 2, -slabH * 0.25, w, slabH * 0.72 + sideH, 16);
+      ctx.fillStyle = side;
+      ctx.fill();
+      ctx.lineWidth = Math.max(5, w * 0.038);
+      ctx.strokeStyle = '#241c16';
+      ctx.stroke();
+      roundRect(ctx, -w / 2, -slabH * 0.55, w, slabH * 0.78, 16);
+      ctx.fillStyle = top;
+      ctx.fill();
+      ctx.stroke();
+      if (scorch && !burnt) {
+        ctx.save();
+        roundRect(ctx, -w / 2 + 3, -slabH * 0.55 + 3, w - 6, slabH * 0.78 - 6, 14);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(120,62,24,0.85)';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(-w / 2, -slabH * 0.55, w, slabH * 0.78);
+        ctx.restore();
+      }
+      const n = burnt ? 5 : 8;
+      for (let i = 0; i < n; i++) {
+        const px = (hash01(seed + i * 3.1) - 0.5) * w * 0.72;
+        const py = (hash01(seed + i * 5.3 + 1) - 0.55) * slabH * 0.42;
+        const rr = 4 + hash01(seed + i * 8) * (scorch ? 9 : 7);
+        ctx.beginPath();
+        ctx.ellipse(px, py, rr, rr * 0.72, hash01(seed + i) * 3, 0, Math.PI * 2);
+        ctx.fillStyle = i % 3 === 0 && !burnt ? '#ddb06a' : spot;
+        ctx.fill();
+      }
+      if (burnt) {
+        ctx.strokeStyle = '#6e6258';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-w * 0.22, -slabH * 0.2);
+        ctx.lineTo(-w * 0.02, -slabH * 0.02);
+        ctx.lineTo(w * 0.16, -slabH * 0.12);
+        ctx.moveTo(-w * 0.02, -slabH * 0.02);
+        ctx.lineTo(w * 0.04, slabH * 0.16);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawDrip(cx, cy, rx) {
+    ctx.save();
+    ctx.fillStyle = '#f3d7a6';
+    ctx.strokeStyle = '#2e2418';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.78, cy + 8, 12, 20, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFocusFrame(x, y, w, h, urgent) {
+    const pad = 10;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = urgent ? '#ff5a3c' : '#ffe56a';
+    ctx.lineWidth = 8;
+    ctx.shadowColor = urgent ? '#ff2a1a' : '#ffb000';
+    ctx.shadowBlur = 18;
+    roundRect(ctx, x - pad, y - pad, w + pad * 2, h + pad * 2, 18);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fffef8';
+    ctx.lineWidth = 6;
+    const L = 26;
+    const corners = [
+      [x - pad, y - pad, 1, 1],
+      [x + w + pad, y - pad, -1, 1],
+      [x - pad, y + h + pad, 1, -1],
+      [x + w + pad, y + h + pad, -1, -1],
+    ];
+    for (const [px, py, sx, sy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(px, py + sy * L);
+      ctx.lineTo(px, py);
+      ctx.lineTo(px + sx * L, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawGradeBanner(st) {
+    if (!st.lastGrade || st.revealAge < 0 || st.revealAge > 1.2) return;
+    const g = st.lastGrade;
+    const hit = Number.isFinite(st.lastHit) ? Math.floor(st.lastHit) : 0;
+    const text = `${g.id} +${hit}`;
+    let fade = 1;
+    if (st.revealAge < 0.08) fade = st.revealAge / 0.08;
+    else if (st.revealAge > 0.95) fade = Math.max(0, (1.2 - st.revealAge) / 0.25);
+    const cx = st.x + st.w / 2;
+    const cy = st.y + st.h - 4;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.font = `bold 32px ${UI_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(text).width;
+    const bw = tw + 28;
+    const bh = 46;
+    roundRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, 12);
+    ctx.fillStyle = 'rgba(16,8,6,0.92)';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = g.cls === 'bad' ? '#ff9d9d' : '#ffe08a';
+    ctx.stroke();
+    ctx.fillStyle = g.cls === 'bad' ? '#ffc1b8' : '#ffe08a';
+    ctx.fillText(text, cx, cy + 1);
+    ctx.restore();
+  }
+
+  function travelAnchor(st, hand) {
+    const from = { x: st.x + st.w / 2, y: st.y + st.h * 0.46 };
+    const b = play.baoge;
+    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+    const head = b.y - BAOGE_H;
+    const chin = head + BAOGE_H * 0.40;
+    const faceL = b.x - bw * 0.30;
+    const faceR = b.x + bw * 0.30;
+    const half = 86;
+    let dropX = from.x;
+    if (from.x >= b.x) dropX = Math.max(from.x, faceR + half + 10);
+    else dropX = Math.min(from.x, faceL - half - 10);
+    const lowY = chin + 28;
+    const u = Math.min(1, Math.max(0, st.carryAge) / 0.55);
+    if (u < 0.42) {
+      const t = u / 0.42;
+      if (t < 0.4) {
+        const k = t / 0.4;
+        return { x: from.x + (dropX - from.x) * k, y: from.y };
+      }
+      const k = (t - 0.4) / 0.6;
+      return { x: dropX, y: from.y + (Math.max(lowY, from.y) - from.y) * k };
+    }
+    const k = (u - 0.42) / 0.58;
+    const ease = k * k * (3 - 2 * k);
+    const landY = Math.max(lowY, hand.y);
+    return {
+      x: dropX + (hand.x - dropX) * ease,
+      y: Math.max(lowY, from.y) + (landY - Math.max(lowY, from.y)) * ease,
+    };
+  }
+
+  function drawSteamer(st) {
+    const x = st.x;
+    const y = st.y;
+    const w = st.w;
+    const h = st.h;
+    const cx = x + w / 2;
+    const cy = y + h * 0.50;
+    const rx = w * 0.46;
+    const ry = h * 0.36;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h - 6, rx * 0.85, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawPotBody(cx, cy, rx, ry, st.kind);
+
+    const traveling = st.state === 'serve' && (st.carried || st.carryAge >= 0);
+    const showInPot = st.state === 'cooking'
+      || (st.state === 'serve' && !traveling)
+      || (st.state === 'cooldown' && st.revealAge >= 0 && st.revealAge < 0.48);
+    if (showInPot) {
+      const p = st.state === 'cooking' ? st.progress : st.shownProgress;
+      const kuehW = w * KUEH_WIDTH_RATIO;
+      const kuehH = kuehW * 0.50;
+      drawKueh(cx, cy + 2, kuehW, kuehH, p, st.scale || 1, st.id);
+      if (st.overflowed) drawDrip(cx, cy, rx);
+    }
+    drawFrontRim(cx, cy, rx, ry, st.kind);
+    drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
+
+    if (st.state === 'cooking') drawWisps(cx, cy - ry * 0.15, 1, vizT + (seedOf(st.id) % 5));
+    if (st.puffLife > 0 && !traveling) drawPuff(cx, cy - ry * 0.2, st.puffLife);
+
+    const showingGrade = st.revealAge >= 0 && st.revealAge <= 1.2 && st.lastGrade;
+    if (!showingGrade) {
+      const chip = chipFor(st);
+      drawChip(cx, y + h - 18, chip.icon, chip.label);
+    }
+    drawDonenessMeter(st);
+    ctx.restore();
+  }
+
+  function drawHeldKueh(st) {
+    if (st.state !== 'serve' || !(st.carried || st.carryAge >= 0)) return;
+    const ready = play.steamers.filter((s) => s.state === 'serve');
+    ready.sort((a, b) => a.serveTimer - b.serveTimer);
+    const index = Math.max(0, ready.findIndex((s) => s.id === st.id));
+    const hand = handPoint(index, ready.length);
+    const pos = st.carried ? hand : travelAnchor(st, hand);
+    const kuehW = Math.min(168, st.w * 0.62);
+    drawKueh(pos.x, pos.y, kuehW, kuehW * 0.52, st.shownProgress, st.scale || 1, st.id);
+    if (st.puffLife > 0.15) drawPuff(pos.x, pos.y - 30, st.puffLife);
+  }
+
+  function drawBasketDrop(d) {
+    const bx = ZONES.basket.x + ZONES.basket.w * 0.46;
+    const by = ZONES.basket.y + ZONES.basket.h * 0.58;
+    const u = Math.min(1, d.age / d.dur);
+    const ease = u * u * (3 - 2 * u);
+    let x = d.x + (bx - d.x) * ease;
+    let y = d.y + (by - d.y) * ease - Math.sin(Math.min(1, u) * Math.PI) * 90;
+    let alpha = 1;
+    let sc = 1 - ease * 0.12;
+    if (d.age >= d.dur) {
+      const settle = Math.min(1, (d.age - d.dur) / 0.42);
+      x = bx;
+      y = by + 6;
+      sc = 0.78;
+      alpha = 1 - settle * 0.15;
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawKueh(x, y, 156, 82, d.look > 0 ? d.look : 0.62, sc, d.seed || 'drop');
+    ctx.restore();
+  }
+
   function draw() {
     ctx.clearRect(0, 0, W, H);
 
-    // Layers (wall → stove → fire → fg → baoge)
+    // Layers (wall → stove → fire → fg → steamers → baoge → product in hand)
     if (assets.wall) ctx.drawImage(assets.wall, 0, 0, W, H);
     if (assets.stove) ctx.drawImage(assets.stove, 0, 0, W, H);
 
@@ -928,65 +1662,59 @@
     // Foreground crate + fan
     if (assets.fg) ctx.drawImage(assets.fg, 0, 0, W, H);
 
-    // Baoge in center walkway
+    // Baoge stays on the floor, facing the camera, under the steamer row.
     if (assets.baoge) {
       const bx = play ? play.baoge.x : 960;
-      const by = play ? play.baoge.y : 780;
-      const bh = H * 0.36;
-      const bw = bh * (assets.baoge.width / assets.baoge.height);
-      ctx.drawImage(assets.baoge, bx - bw / 2, by - bh, bw, bh);
+      const by = play ? play.baoge.y : BAOGE_FLOOR;
+      const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
+      ctx.drawImage(assets.baoge, bx - bw / 2, by - BAOGE_H, bw, BAOGE_H);
     }
 
     // Interactive overlays during play
     if (state === 'play' && play) {
-      // steamer highlights
       for (const st of play.steamers) {
         if (!st.unlocked) continue;
-        ctx.save();
-        let stroke = 'rgba(255,255,255,0.35)';
-        let fill = 'rgba(255,255,255,0.06)';
-        if (st.state === 'cooking') {
-          stroke = 'rgba(255,200,80,0.9)';
-          fill = 'rgba(255,180,40,0.12)';
-        } else if (st.state === 'serve') {
-          stroke = 'rgba(80,220,120,0.95)';
-          fill = 'rgba(80,220,120,0.18)';
-        } else if (st.state === 'empty') {
-          stroke = 'rgba(140,200,255,0.7)';
-        }
-        if (st.flash > 0) {
-          stroke = 'rgba(255,80,60,0.95)';
-          fill = `rgba(255,60,40,${0.15 + st.flash * 0.1})`;
-        }
-        roundRect(ctx, st.x, st.y, st.w, st.h, 12);
-        ctx.fillStyle = fill;
-        ctx.fill();
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.textAlign = 'center';
-        let label = st.name;
-        if (st.state === 'empty') label = '倒漿';
-        if (st.state === 'cooking') label = '揭籠';
-        if (st.state === 'serve') label = `出餐 ${st.serveTimer.toFixed(1)}s`;
-        if (st.state === 'cooldown') label = '…';
-        ctx.fillText(label, st.x + st.w / 2, st.y + st.h / 2 + 8);
-        drawDonenessMeter(st);
-        ctx.restore();
+        drawSteamer(st);
       }
 
-      // basket / fan zones
-      drawZone(ZONES.basket, '出餐', 'rgba(220,60,60,0.25)', 'rgba(255,120,100,0.85)');
-      drawZone(ZONES.fan, fanning ? '搧火中' : '搧火', 'rgba(255,160,40,0.2)', 'rgba(255,200,80,0.9)');
+      const action = currentAction();
+      const serveHot = action === '出餐';
+      drawZone(
+        ZONES.basket,
+        '出餐',
+        serveHot ? 'rgba(255,40,30,0.42)' : 'rgba(180,40,40,0.16)',
+        serveHot ? '#ffd0c8' : 'rgba(255,140,120,0.7)',
+        serveHot,
+        'basket',
+      );
+      drawZone(
+        ZONES.fan,
+        fanning ? '搧火中' : '搧火',
+        (action === '搧火' || fanning) ? 'rgba(255,170,40,0.34)' : 'rgba(255,160,40,0.14)',
+        (action === '搧火' || fanning) ? '#ffe08a' : 'rgba(255,200,80,0.65)',
+        action === '搧火' || fanning,
+        'fan',
+      );
+
+      for (const st of play.steamers) {
+        if (!st.unlocked) continue;
+        drawHeldKueh(st);
+      }
+      for (const d of play.drops || []) drawBasketDrop(d);
+
+      const focus = focusSteamer();
+      for (const st of play.steamers) {
+        if (!st.unlocked) continue;
+        if (focus && st.id === focus.id) drawFocusFrame(st.x, st.y, st.w, st.h, st.flash > 0);
+        drawGradeBanner(st);
+      }
 
       if (play.tutorialT > 0) {
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(W * 0.2, H * 0.82, W * 0.6, 70);
         ctx.fillStyle = '#ffe8c8';
-        ctx.font = 'bold 28px sans-serif';
+        ctx.font = `bold 28px ${UI_FONT}`;
         ctx.textAlign = 'center';
         ctx.fillText('點蒸籠倒漿 → 按住右扇搧火 → 時機到點籠揭開 → 送到左紅籃', W / 2, H * 0.82 + 45);
         ctx.restore();
@@ -996,20 +1724,33 @@
     }
   }
 
-  function drawZone(z, label, fill, stroke) {
+  function drawZone(z, label, fill, stroke, hot, icon) {
     ctx.save();
+    const pulse = hot ? 1 + Math.sin(vizT * 5) * 0.03 : 1;
+    const cx = z.x + z.w / 2;
+    const cy = z.y + z.h / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-cx, -cy);
+    if (hot) {
+      ctx.shadowColor = stroke;
+      ctx.shadowBlur = 28;
+    }
     roundRect(ctx, z.x, z.y, z.w, z.h, 16);
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = stroke;
-    ctx.lineWidth = 3;
-    ctx.setLineDash([10, 8]);
+    ctx.lineWidth = hot ? 6 : 3;
+    if (!hot) ctx.setLineDash([10, 8]);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 26px sans-serif';
+    ctx.font = `bold ${hot ? 44 : 30}px ${UI_FONT}`;
     ctx.textAlign = 'center';
-    ctx.fillText(label, z.x + z.w / 2, z.y + z.h / 2 + 10);
+    ctx.textBaseline = 'middle';
+    if (icon) drawIcon(icon, cx - ctx.measureText(label).width / 2 - 26, cy, hot ? 36 : 28);
+    ctx.fillText(label, cx + (icon ? 16 : 0), cy);
     ctx.restore();
   }
 
@@ -1026,6 +1767,7 @@
   function loop(ts) {
     const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
     lastTs = ts;
+    vizT += dt;
     update(dt);
     draw();
     requestAnimationFrame(loop);

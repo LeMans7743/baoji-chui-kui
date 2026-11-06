@@ -192,8 +192,12 @@ h3 { margin: 0.2rem 0 0.4rem; color: #f0c878; font-size: 1rem; }
 #touch-hint {
   position: absolute; bottom: 1.5%; left: 50%; transform: translateX(-50%);
   z-index: 22; pointer-events: none;
-  background: rgba(0,0,0,0.45); padding: 0.35rem 0.9rem; border-radius: 999px;
-  font-size: clamp(11px, 1.8vw, 14px); letter-spacing: 0.08em; color: #ffe8c8;
+  background: rgba(40, 12, 8, 0.78);
+  border: 2px solid #f5d27a;
+  padding: 0.28rem 1.1rem; border-radius: 999px;
+  font-size: clamp(16px, 2.8vw, 28px); font-weight: 800;
+  letter-spacing: 0.14em; color: #ffe08a;
+  text-shadow: 0 2px 0 #5a1a12;
 }
 
 .submit-error {
