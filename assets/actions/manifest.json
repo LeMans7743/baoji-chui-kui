@@ -1,0 +1,1407 @@
+{
+  "status": "PREVIEW v6 (scene-quality redraw, coherent GenerateImage + vertical layout fit) — coordinates are visual estimates from the 1920×1080 art (~±8 world px); engine must fine-tune. NOT pixel-verified.",
+  "scene": "scene/scene-lidless.jpg",
+  "scene_with_lids_preview": "scene/scene-with-lids.jpg",
+  "scene_also_at": [
+    "/home/box/game-art-refs/stage-traditional-stove-mobile-v3-scale.jpg",
+    "/home/box/game-art-refs/baoji-kitchen-stage/09-stage-traditional-stove-mobile-v3-scale.jpg"
+  ],
+  "scene_size": [
+    1920,
+    1080
+  ],
+  "scene_note": "Engine default is the lidless plate. Source is one GenerateImage 16:9 painting (scene C) of a complete uncropped stove, six open mouths, fire, red crate and a round woven bamboo fan, with consistent perspective and no pasted props. A full-frame piecewise vertical layout fit then placed 台面 at y=740 and stove base near y=928 (bands: wall slightly stretched, steamers+slab shifted down 75px with scale 1.0, body compressed, floor slightly compressed). Not a prop collage. Old 05b/04 stove layers from v2 do NOT match this scene (layers were not rebuilt). Single-flat preview only. v2 left untouched. v5 composite archived in draft-v5-composite/.",
+  "lids": {
+    "aluminum": "scene/lid-aluminum.png",
+    "bamboo": "scene/lid-bamboo.png",
+    "note": "One alum lid and one bamboo lid, transparent PNG, generated to match the new mouth ellipses (slight top-down). Place at each cage lid_placement_center using lid_paste_xy / lid_size / lid_anchor_local. Do not bake lids into the engine background."
+  },
+  "canvas": [
+    768,
+    768
+  ],
+  "anchor": [
+    384,
+    720
+  ],
+  "anchor_note": "foot-bottom-center; 48px transparent padding below (rows 720-767); crouch same anchor. Canvas NOT enlarged in v6.",
+  "display_scale": 0.866873,
+  "standing_height_screen_px": 560,
+  "formula": "world = foot + scale*(local - anchor); foot = target - scale*offset",
+  "world_points": {
+    "iron_1_mouth": [
+      470,
+      588
+    ],
+    "iron_1_lid_place": [
+      470.0,
+      583.5
+    ],
+    "iron_2_mouth": [
+      665,
+      588
+    ],
+    "iron_2_lid_place": [
+      665.0,
+      584.0
+    ],
+    "iron_3_mouth": [
+      864,
+      588
+    ],
+    "iron_3_lid_place": [
+      864.0,
+      584.5
+    ],
+    "bamboo_1_mouth": [
+      1061,
+      588
+    ],
+    "bamboo_1_lid_place": [
+      1061.0,
+      574.5
+    ],
+    "bamboo_2_mouth": [
+      1250,
+      588
+    ],
+    "bamboo_2_lid_place": [
+      1250.0,
+      575.0
+    ],
+    "bamboo_3_mouth": [
+      1436,
+      588
+    ],
+    "bamboo_3_lid_place": [
+      1436.0,
+      576.0
+    ],
+    "fire_l_center": [
+      662,
+      835
+    ],
+    "fire_l_bottom_lip": [
+      662,
+      885
+    ],
+    "fire_r_center": [
+      1282,
+      834
+    ],
+    "fire_r_bottom_lip": [
+      1282,
+      882
+    ],
+    "fire_mouth_center": [
+      1282,
+      834
+    ],
+    "fire_mouth_bottom_lip": [
+      1282,
+      882
+    ],
+    "red_basket_rim_center": [
+      225,
+      875
+    ],
+    "red_basket_drop": [
+      225,
+      932
+    ],
+    "fan_prop_on_floor_bbox": [
+      1530,
+      842,
+      1888,
+      1070
+    ]
+  },
+  "cages": [
+    {
+      "id": "iron_1",
+      "kind": "aluminum",
+      "mouth_center": [
+        470,
+        588
+      ],
+      "mouth_diameter_px": 180,
+      "visual_bbox": [
+        380,
+        556,
+        560,
+        696
+      ],
+      "touch_bbox": [
+        380,
+        556,
+        560,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-aluminum.png",
+      "lid_placement_center": [
+        470.0,
+        583.5
+      ],
+      "lid_paste_xy": [
+        378,
+        541
+      ],
+      "lid_size": [
+        184,
+        85
+      ],
+      "lid_anchor_local": [
+        92.0,
+        42.5
+      ],
+      "pour_target": [
+        470,
+        588
+      ],
+      "station": "stove_front",
+      "diameter_over_shoulder": 1.184
+    },
+    {
+      "id": "iron_2",
+      "kind": "aluminum",
+      "mouth_center": [
+        665,
+        588
+      ],
+      "mouth_diameter_px": 178,
+      "visual_bbox": [
+        576,
+        556,
+        754,
+        696
+      ],
+      "touch_bbox": [
+        576,
+        556,
+        754,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-aluminum.png",
+      "lid_placement_center": [
+        665.0,
+        584.0
+      ],
+      "lid_paste_xy": [
+        574,
+        542
+      ],
+      "lid_size": [
+        182,
+        84
+      ],
+      "lid_anchor_local": [
+        91.0,
+        42.0
+      ],
+      "pour_target": [
+        665,
+        588
+      ],
+      "station": "stove_front",
+      "diameter_over_shoulder": 1.171
+    },
+    {
+      "id": "iron_3",
+      "kind": "aluminum",
+      "mouth_center": [
+        864,
+        588
+      ],
+      "mouth_diameter_px": 176,
+      "visual_bbox": [
+        776,
+        556,
+        952,
+        696
+      ],
+      "touch_bbox": [
+        776,
+        556,
+        952,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-aluminum.png",
+      "lid_placement_center": [
+        864.0,
+        584.5
+      ],
+      "lid_paste_xy": [
+        774,
+        543
+      ],
+      "lid_size": [
+        180,
+        83
+      ],
+      "lid_anchor_local": [
+        90.0,
+        41.5
+      ],
+      "pour_target": [
+        864,
+        588
+      ],
+      "station": "stove_front",
+      "diameter_over_shoulder": 1.158
+    },
+    {
+      "id": "bamboo_1",
+      "kind": "bamboo",
+      "mouth_center": [
+        1061,
+        588
+      ],
+      "mouth_diameter_px": 174,
+      "visual_bbox": [
+        974,
+        556,
+        1148,
+        696
+      ],
+      "touch_bbox": [
+        974,
+        556,
+        1148,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-bamboo.png",
+      "lid_placement_center": [
+        1061.0,
+        574.5
+      ],
+      "lid_paste_xy": [
+        972,
+        523
+      ],
+      "lid_size": [
+        178,
+        103
+      ],
+      "lid_anchor_local": [
+        89.0,
+        51.5
+      ],
+      "pour_target": [
+        1061,
+        588
+      ],
+      "station": "bamboo_front",
+      "diameter_over_shoulder": 1.145
+    },
+    {
+      "id": "bamboo_2",
+      "kind": "bamboo",
+      "mouth_center": [
+        1250,
+        588
+      ],
+      "mouth_diameter_px": 172,
+      "visual_bbox": [
+        1164,
+        556,
+        1336,
+        696
+      ],
+      "touch_bbox": [
+        1164,
+        556,
+        1336,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-bamboo.png",
+      "lid_placement_center": [
+        1250.0,
+        575.0
+      ],
+      "lid_paste_xy": [
+        1162,
+        524
+      ],
+      "lid_size": [
+        176,
+        102
+      ],
+      "lid_anchor_local": [
+        88.0,
+        51.0
+      ],
+      "pour_target": [
+        1250,
+        588
+      ],
+      "station": "bamboo_front",
+      "diameter_over_shoulder": 1.132
+    },
+    {
+      "id": "bamboo_3",
+      "kind": "bamboo",
+      "mouth_center": [
+        1436,
+        588
+      ],
+      "mouth_diameter_px": 168,
+      "visual_bbox": [
+        1352,
+        556,
+        1520,
+        696
+      ],
+      "touch_bbox": [
+        1352,
+        556,
+        1520,
+        696
+      ],
+      "touch_short_side": 140,
+      "lid_file": "scene/lid-bamboo.png",
+      "lid_placement_center": [
+        1436.0,
+        576.0
+      ],
+      "lid_paste_xy": [
+        1350,
+        526
+      ],
+      "lid_size": [
+        172,
+        100
+      ],
+      "lid_anchor_local": [
+        86.0,
+        50.0
+      ],
+      "pour_target": [
+        1436,
+        588
+      ],
+      "station": "bamboo_front",
+      "diameter_over_shoulder": 1.105
+    }
+  ],
+  "fires": {
+    "fire_l": {
+      "id": "fire_l",
+      "opening": [
+        555,
+        785,
+        770,
+        885
+      ],
+      "opening_wh": [
+        215,
+        100
+      ],
+      "touch_bbox": [
+        532,
+        768,
+        792,
+        908
+      ],
+      "touch_short_side": 140,
+      "center": [
+        662,
+        835
+      ],
+      "bottom_lip": [
+        662,
+        885
+      ]
+    },
+    "fire_r": {
+      "id": "fire_r",
+      "opening": [
+        1190,
+        786,
+        1375,
+        882
+      ],
+      "opening_wh": [
+        185,
+        96
+      ],
+      "touch_bbox": [
+        1165,
+        768,
+        1400,
+        908
+      ],
+      "touch_short_side": 140,
+      "center": [
+        1282,
+        834
+      ],
+      "bottom_lip": [
+        1282,
+        882
+      ]
+    }
+  },
+  "red_basket": {
+    "top_left": [
+      40,
+      848
+    ],
+    "size": [
+      370,
+      158
+    ],
+    "rim_center": [
+      225,
+      875
+    ],
+    "drop": [
+      225,
+      932
+    ],
+    "touch_bbox": [
+      40,
+      848,
+      410,
+      1006
+    ],
+    "touch_short_side": 158,
+    "top_y": 848,
+    "height": 158,
+    "knee_y": 879
+  },
+  "floor_fan": {
+    "bbox": [
+      1530,
+      842,
+      1888,
+      1070
+    ],
+    "size": [
+      358,
+      228
+    ],
+    "note": "地上圓竹扇（編織圓扇，不是蒲扇），不可站"
+  },
+  "floor_standable_polygon": [
+    [
+      40,
+      1072
+    ],
+    [
+      1910,
+      1072
+    ],
+    [
+      1910,
+      1055
+    ],
+    [
+      1880,
+      1055
+    ],
+    [
+      1530,
+      1000
+    ],
+    [
+      1530,
+      948
+    ],
+    [
+      420,
+      948
+    ],
+    [
+      420,
+      1010
+    ],
+    [
+      40,
+      1010
+    ]
+  ],
+  "floor_note": "可站地板在灶身前方與兩側走道；排除紅籃佔用區與地上圓竹扇。灶身底緣約 y=928（目標 900–940），腳底站位 y=1030（人物站在灶前、略近鏡頭，灶在人後方地板）。人物不往上走。約 ±8px 目測。",
+  "stations": {
+    "stove_front": {
+      "actions": [
+        "pour",
+        "lid",
+        "take"
+      ],
+      "targets": [
+        "iron_1",
+        "iron_2",
+        "iron_3"
+      ],
+      "foot_world": [
+        665,
+        1030
+      ],
+      "note": "鐵/鋁籠前地板，對 iron_1..3",
+      "action_points_world": {
+        "pour": {
+          "f1": {
+            "ladle_mouth": [
+              476.0,
+              527.2
+            ]
+          },
+          "f2": {
+            "ladle_mouth": [
+              475.2,
+              542.8
+            ]
+          },
+          "f3": {
+            "ladle_mouth": [
+              675.4,
+              490.8
+            ]
+          }
+        },
+        "lid": {
+          "f1": {
+            "lid_center": [
+              532.4,
+              617.4
+            ],
+            "hand": [
+              522.8,
+              589.6
+            ]
+          },
+          "f2": {
+            "lid_center": [
+              554.0,
+              482.1
+            ],
+            "hand": [
+              559.2,
+              449.2
+            ]
+          },
+          "f3": {
+            "lid_center": [
+              505.5,
+              593.1
+            ]
+          }
+        },
+        "take": {
+          "f1": {
+            "kueh_in_hand": [
+              529.8,
+              570.6
+            ],
+            "tray_center": [
+              607.8,
+              704.1
+            ]
+          },
+          "f2": {
+            "kueh_in_hand": [
+              566.2,
+              659.0
+            ],
+            "tray_center": [
+              596.5,
+              700.6
+            ]
+          },
+          "f3": {
+            "kueh_on_tray": [
+              594.8,
+              691.9
+            ],
+            "tray_center": [
+              596.5,
+              700.6
+            ]
+          }
+        }
+      }
+    },
+    "bamboo_front": {
+      "actions": [
+        "pour",
+        "lid",
+        "take"
+      ],
+      "targets": [
+        "bamboo_1",
+        "bamboo_2",
+        "bamboo_3"
+      ],
+      "foot_world": [
+        1250,
+        1030
+      ],
+      "note": "竹籠前地板，對 bamboo_1..3；三個各自有蓋的矮籠，不是一座高塔的分層線",
+      "action_points_world": {
+        "pour": {
+          "f1": {
+            "ladle_mouth": [
+              1061.0,
+              527.2
+            ]
+          },
+          "f2": {
+            "ladle_mouth": [
+              1060.2,
+              542.8
+            ]
+          },
+          "f3": {
+            "ladle_mouth": [
+              1260.4,
+              490.8
+            ]
+          }
+        },
+        "lid": {
+          "f1": {
+            "lid_center": [
+              1117.4,
+              617.4
+            ],
+            "hand": [
+              1107.8,
+              589.6
+            ]
+          },
+          "f2": {
+            "lid_center": [
+              1139.0,
+              482.1
+            ],
+            "hand": [
+              1144.2,
+              449.2
+            ]
+          },
+          "f3": {
+            "lid_center": [
+              1090.5,
+              593.1
+            ]
+          }
+        },
+        "take": {
+          "f1": {
+            "kueh_in_hand": [
+              1114.8,
+              570.6
+            ],
+            "tray_center": [
+              1192.8,
+              704.1
+            ]
+          },
+          "f2": {
+            "kueh_in_hand": [
+              1151.2,
+              659.0
+            ],
+            "tray_center": [
+              1181.5,
+              700.6
+            ]
+          },
+          "f3": {
+            "kueh_on_tray": [
+              1179.8,
+              691.9
+            ],
+            "tray_center": [
+              1181.5,
+              700.6
+            ]
+          }
+        }
+      }
+    },
+    "fan_crouch": {
+      "actions": [
+        "fan"
+      ],
+      "targets": [
+        "fire_r"
+      ],
+      "foot_world": [
+        1100,
+        1030
+      ],
+      "note": "蹲姿搧火，正對右側爐口；地上圓竹扇在更右側，站位避開扇",
+      "action_points_world": {
+        "fan": {
+          "f1": {
+            "fan_center": [
+              1015.0,
+              934.6
+            ]
+          },
+          "f2": {
+            "fan_center": [
+              1250.0,
+              842.8
+            ],
+            "fan_tip": [
+              1288.1,
+              842.8
+            ]
+          },
+          "f3": {
+            "fan_center": [
+              1176.3,
+              901.7
+            ]
+          }
+        }
+      }
+    },
+    "serve": {
+      "actions": [
+        "serve"
+      ],
+      "targets": [
+        "red_basket_drop"
+      ],
+      "foot_world": [
+        450,
+        1030
+      ],
+      "note": "紅籃前方偏右、灶身左前方走道",
+      "action_points_world": {
+        "serve": {
+          "f1": {
+            "kueh_on_tray": [
+              387.6,
+              688.5
+            ]
+          },
+          "f2": {
+            "kueh_on_tray": [
+              326.9,
+              730.1
+            ]
+          },
+          "f3": {
+            "kueh_on_tray": [
+              308.7,
+              820.2
+            ],
+            "release_point": [
+              308.7,
+              820.2
+            ]
+          },
+          "f4": {
+            "tray_center_empty": [
+              312.2,
+              826.3
+            ]
+          }
+        }
+      }
+    }
+  },
+  "local_points": {
+    "pour": {
+      "f1": {
+        "ladle_mouth": [
+          166,
+          140
+        ]
+      },
+      "f2": {
+        "ladle_mouth": [
+          165,
+          158
+        ]
+      },
+      "f3": {
+        "ladle_mouth": [
+          396,
+          98
+        ]
+      }
+    },
+    "fan": {
+      "f1": {
+        "fan_center": [
+          286,
+          610
+        ]
+      },
+      "f2": {
+        "fan_center": [
+          557,
+          504
+        ],
+        "fan_tip": [
+          601,
+          504
+        ]
+      },
+      "f3": {
+        "fan_center": [
+          472,
+          572
+        ]
+      }
+    },
+    "lid": {
+      "f1": {
+        "lid_center": [
+          231,
+          244
+        ],
+        "hand": [
+          220,
+          212
+        ]
+      },
+      "f2": {
+        "lid_center": [
+          256,
+          88
+        ],
+        "hand": [
+          262,
+          50
+        ]
+      },
+      "f3": {
+        "lid_center": [
+          200,
+          216
+        ]
+      }
+    },
+    "take": {
+      "f1": {
+        "kueh_in_hand": [
+          228,
+          190
+        ],
+        "tray_center": [
+          318,
+          344
+        ]
+      },
+      "f2": {
+        "kueh_in_hand": [
+          270,
+          292
+        ],
+        "tray_center": [
+          305,
+          340
+        ]
+      },
+      "f3": {
+        "kueh_on_tray": [
+          303,
+          330
+        ],
+        "tray_center": [
+          305,
+          340
+        ]
+      }
+    },
+    "serve": {
+      "f1": {
+        "kueh_on_tray": [
+          312,
+          326
+        ]
+      },
+      "f2": {
+        "kueh_on_tray": [
+          242,
+          374
+        ]
+      },
+      "f3": {
+        "kueh_on_tray": [
+          221,
+          478
+        ],
+        "release_point": [
+          221,
+          478
+        ]
+      },
+      "f4": {
+        "tray_center_empty": [
+          225,
+          485
+        ]
+      }
+    },
+    "swat": {
+      "f1": {
+        "newspaper_tip": [
+          356,
+          150
+        ]
+      },
+      "f2": {
+        "newspaper_tip": [
+          612,
+          540
+        ]
+      },
+      "f3": {
+        "impact_point": [
+          559,
+          712
+        ]
+      }
+    }
+  },
+  "offsets_from_anchor": {
+    "pour": {
+      "f1": {
+        "ladle_mouth": [
+          -218,
+          -580
+        ]
+      },
+      "f2": {
+        "ladle_mouth": [
+          -219,
+          -562
+        ]
+      },
+      "f3": {
+        "ladle_mouth": [
+          12,
+          -622
+        ]
+      }
+    },
+    "fan": {
+      "f1": {
+        "fan_center": [
+          -98,
+          -110
+        ]
+      },
+      "f2": {
+        "fan_center": [
+          173,
+          -216
+        ],
+        "fan_tip": [
+          217,
+          -216
+        ]
+      },
+      "f3": {
+        "fan_center": [
+          88,
+          -148
+        ]
+      }
+    },
+    "lid": {
+      "f1": {
+        "lid_center": [
+          -153,
+          -476
+        ],
+        "hand": [
+          -164,
+          -508
+        ]
+      },
+      "f2": {
+        "lid_center": [
+          -128,
+          -632
+        ],
+        "hand": [
+          -122,
+          -670
+        ]
+      },
+      "f3": {
+        "lid_center": [
+          -184,
+          -504
+        ]
+      }
+    },
+    "take": {
+      "f1": {
+        "kueh_in_hand": [
+          -156,
+          -530
+        ],
+        "tray_center": [
+          -66,
+          -376
+        ]
+      },
+      "f2": {
+        "kueh_in_hand": [
+          -114,
+          -428
+        ],
+        "tray_center": [
+          -79,
+          -380
+        ]
+      },
+      "f3": {
+        "kueh_on_tray": [
+          -81,
+          -390
+        ],
+        "tray_center": [
+          -79,
+          -380
+        ]
+      }
+    },
+    "serve": {
+      "f1": {
+        "kueh_on_tray": [
+          -72,
+          -394
+        ]
+      },
+      "f2": {
+        "kueh_on_tray": [
+          -142,
+          -346
+        ]
+      },
+      "f3": {
+        "kueh_on_tray": [
+          -163,
+          -242
+        ],
+        "release_point": [
+          -163,
+          -242
+        ]
+      },
+      "f4": {
+        "tray_center_empty": [
+          -159,
+          -235
+        ]
+      }
+    },
+    "swat": {
+      "f1": {
+        "newspaper_tip": [
+          -28,
+          -570
+        ]
+      },
+      "f2": {
+        "newspaper_tip": [
+          228,
+          -180
+        ]
+      },
+      "f3": {
+        "impact_point": [
+          175,
+          -8
+        ]
+      }
+    }
+  },
+  "actions": {
+    "pour": {
+      "frames": [
+        "pour/baoge-pour-f1.png",
+        "pour/baoge-pour-f2.png",
+        "pour/baoge-pour-f3.png"
+      ],
+      "sheet": "pour/baoge-pour-sheet.png",
+      "sheet_size": [
+        2304,
+        768
+      ],
+      "duration_ms": [
+        160,
+        260,
+        180
+      ],
+      "loop": false,
+      "props": {
+        "body_held": [
+          "ladle",
+          "batter inside ladle"
+        ],
+        "engine_moving": [
+          "batter arc ladle_mouth -> steamer mouth"
+        ],
+        "timing": "play f1 -> f2-nostream; engine draws arc only while f2-nostream shown; arc ends before f3",
+        "constraints": "never use baked-stream f2 together with engine arc"
+      },
+      "extra": [
+        "pour/baoge-pour-f2-nostream.png"
+      ],
+      "recommended_sheet": "pour/baoge-pour-engine-sheet.png",
+      "recommended_frames": [
+        "pour/baoge-pour-f1.png",
+        "pour/baoge-pour-f2-nostream.png",
+        "pour/baoge-pour-f3.png"
+      ],
+      "backup_sheet": "pour/baoge-pour-sheet.png (backup only, f2 has baked stream - NOT engine default)"
+    },
+    "fan": {
+      "frames": [
+        "fan/baoge-fan-f1.png",
+        "fan/baoge-fan-f2.png",
+        "fan/baoge-fan-f3.png"
+      ],
+      "sheet": "fan/baoge-fan-sheet.png",
+      "sheet_size": [
+        2304,
+        768
+      ],
+      "duration_ms": [
+        110,
+        110,
+        110
+      ],
+      "loop": true,
+      "props": {
+        "body_held": [
+          "bamboo hand fan"
+        ],
+        "engine_moving": [
+          "wind/fire FX toward fire_mouth_bottom_lip"
+        ]
+      }
+    },
+    "lid": {
+      "frames": [
+        "lid/baoge-lid-f1.png",
+        "lid/baoge-lid-f2.png",
+        "lid/baoge-lid-f3.png"
+      ],
+      "sheet": "lid/baoge-lid-sheet.png",
+      "sheet_size": [
+        2304,
+        768
+      ],
+      "duration_ms": [
+        150,
+        200,
+        200
+      ],
+      "loop": false,
+      "props": {
+        "body_held": [
+          "aluminum lid in hand in ALL f1-f3 (scene-scale); optional bamboo held set in lid-bamboo-held/"
+        ],
+        "engine_moving": [
+          "optional lid pop from steamer mouth"
+        ],
+        "timing": "while any lid frame f1-f3 is shown, engine lid must be HIDDEN. If lid must pop from mouth to hand: during pop show idle (no lid), at arrival hide engine lid and switch to lid f1 -> f2 -> f3.",
+        "constraints": "f1–f3 都持蓋；持蓋期間 engine 蓋必須隱藏。若蓋從籠口彈到手上：彈飛階段先顯示 idle，蓋到手的那一刻隱藏 engine 蓋，再切 lid f1→f2→f3。v6 工程預設場景是無蓋空籠口（scene/scene-lidless.jpg），蓋子是獨立 PNG，不再烘焙在背景裡。手持蓋與場景鋁蓋在角色 scale 下同比例（畫布仍 768×768、腳錨 (384,720)）；f1/f2 已從原圖重合成以修殘縫，f3 沿用 v5 較乾淨的底面蓋。舊版小蓋備份在 draft-v4-size430/lid-original/。另提供 lid-bamboo-held/ 竹蓋手持三格與 sheet。",
+        "idle_frame": "../bao-ge-faces/baoge-fullbody-34-idle-smile.png (different canvas; engine must align its own foot anchor)"
+      },
+      "held_lid_scale_note": "scene alum lid ~184 screen px; canvas lid width 212 (=184/0.8669). Character not redrawn. f1/f2 rebuilt from original small-lid frames: old cloche removed (hand protected), new scene lid composited at the grip. f3 kept from v5 (already clean underside, same canvas/anchor). Optional bamboo held set updated for f1/f2 the same way; f3 kept.",
+      "optional_bamboo_held": {
+        "frames": [
+          "lid-bamboo-held/baoge-lid-bamboo-f1.png",
+          "lid-bamboo-held/baoge-lid-bamboo-f2.png",
+          "lid-bamboo-held/baoge-lid-bamboo-f3.png"
+        ],
+        "sheet": "lid-bamboo-held/baoge-lid-bamboo-sheet.png"
+      }
+    },
+    "take": {
+      "frames": [
+        "take/baoge-take-f1.png",
+        "take/baoge-take-f2.png",
+        "take/baoge-take-f3.png"
+      ],
+      "sheet": "take/baoge-take-sheet.png",
+      "sheet_size": [
+        2304,
+        768
+      ],
+      "duration_ms": [
+        150,
+        150,
+        220
+      ],
+      "loop": false,
+      "props": {
+        "body_held": [
+          "metal tray",
+          "kueh in hand f1-f2",
+          "kueh on tray f3"
+        ],
+        "engine_moving": [
+          "kueh flying from steamer mouth to hand"
+        ],
+        "timing": "during engine flight show idle (no kueh-in-hand pose exists; idle has no tray either); at arrival hide engine kueh in the same frame and switch take f1 -> f2 -> f3",
+        "constraints": "never show engine kueh and take f1/f2/f3 simultaneously",
+        "idle_frame": "../bao-ge-faces/baoge-fullbody-34-idle-smile.png (different canvas; engine must align its own foot anchor)"
+      }
+    },
+    "serve": {
+      "frames": [
+        "serve/baoge-serve-f1.png",
+        "serve/baoge-serve-f2.png",
+        "serve/baoge-serve-f3.png",
+        "serve/baoge-serve-f4.png"
+      ],
+      "sheet": "serve/baoge-serve-sheet.png",
+      "sheet_size": [
+        3072,
+        768
+      ],
+      "duration_ms": [
+        150,
+        170,
+        200,
+        240
+      ],
+      "loop": false,
+      "props": {
+        "body_held": [
+          "metal tray",
+          "kueh on tray f1-f3",
+          "empty tray f4"
+        ],
+        "engine_moving": [
+          "independent kueh spawned at f3 release_point"
+        ],
+        "timing": "f1 -> f2 -> f3; at the exact switch f3 -> f4 spawn engine kueh at f3 release_point world coords and fly to red_basket_drop; f4 is last frame",
+        "constraints": "no engine kueh before f4"
+      }
+    },
+    "swat": {
+      "frames": [
+        "swat/baoge-swat-f1.png",
+        "swat/baoge-swat-f2.png",
+        "swat/baoge-swat-f3.png"
+      ],
+      "sheet": "swat/baoge-swat-sheet.png",
+      "sheet_size": [
+        2304,
+        768
+      ],
+      "duration_ms": [
+        160,
+        90,
+        220
+      ],
+      "loop": false,
+      "props": {
+        "body_held": [
+          "rolled newspaper",
+          "impact star f3"
+        ],
+        "engine_moving": [
+          "pest"
+        ]
+      }
+    }
+  },
+  "facing": {
+    "pour": "left",
+    "lid": "left",
+    "take": "left",
+    "serve": "left",
+    "fan": "right",
+    "swat": "right",
+    "mirror": "x_local' = 767 - x_local"
+  },
+  "idle": {
+    "file": "../bao-ge-faces/baoge-fullbody-34-idle-smile.png",
+    "note": "不同畫布（864×1152，不透明高 1066）；引擎必須自行對齊腳底。顯示站高 560。"
+  },
+  "proportion_verification": {
+    "standing_height_px": 560,
+    "display_scale": 0.8668730650154799,
+    "foot_y": 1030,
+    "head_top_y": 470,
+    "waist_y": 740,
+    "knee_y": 879,
+    "shoulder_width_px": 152,
+    "shoulder_width_note": "idle 縮到站高 560 後，肩線（約身高 0.22 處）背心寬 152px",
+    "stove_top_y": 740,
+    "stove_top_over_height": 0.518,
+    "stove_top_target": "0.50–0.55 from feet",
+    "stove_top_met": true,
+    "steamer_diameters_px": {
+      "iron_1": 180,
+      "iron_2": 178,
+      "iron_3": 176,
+      "bamboo_1": 174,
+      "bamboo_2": 172,
+      "bamboo_3": 168
+    },
+    "steamer_diameter_over_shoulder": {
+      "iron_1": 1.184,
+      "iron_2": 1.171,
+      "iron_3": 1.158,
+      "bamboo_1": 1.145,
+      "bamboo_2": 1.132,
+      "bamboo_3": 1.105
+    },
+    "steamer_diameter_target": "1.0–1.5 × shoulder",
+    "steamer_diameter_met": true,
+    "bamboo_top_y": 556,
+    "bamboo_top_minus_head_px": 86,
+    "bamboo_exceeds_head": false,
+    "basket_top_y": 848,
+    "basket_height_px": 158,
+    "basket_height_over_knee_height": 1.046,
+    "basket_top_at_knee": false,
+    "basket_top_vs_knee_px": 31,
+    "basket_note": "籃頂 y=848，在膝 y=879 上方 31px；籃高 158，籃高/膝高=1.046。約到膝蓋，但頂緣略高於膝線。",
+    "touch_min_short_side_assumed_px": 140,
+    "steamer_touch_short_sides": {
+      "iron_1": 140,
+      "iron_2": 140,
+      "iron_3": 140,
+      "bamboo_1": 140,
+      "bamboo_2": 140,
+      "bamboo_3": 140
+    },
+    "fire_touch_short_sides": {
+      "fire_l": 140,
+      "fire_r": 140
+    },
+    "fire_opening_heights_px": {
+      "fire_l": 100,
+      "fire_r": 96
+    },
+    "fire_touch_note": "爐口開口高度約 96–100px（垂直壓縮後）。觸控 bbox 含砌石框並 padding 到短邊 140。開口本身短邊未達 140。",
+    "basket_touch_short_side": 158,
+    "steamer_touch_met": true,
+    "fire_touch_met": true,
+    "stove_base_y": 928,
+    "stove_base_target": "900–940, behind standing feet at 1030",
+    "stove_base_met": true,
+    "stove_base_vs_foot_px": 102
+  },
+  "display_height_note": "standing 646 canvas px -> 560 screen px, scale 0.866873 (560/646), crouch same scale. v5 composite archived in draft-v5-composite/. v4 430px in draft-v4-size430/. v3 360px in draft-v3-size360/.",
+  "overview_note": "preview/stations-overview.jpg 只是四站位總覽，不是遊戲畫面；遊戲中不會同時出現 4 個包哥。preview/game-screen-single-baoge.jpg 才是單人遊戲畫面示意（無 debug 線、無虛構 HUD）。",
+  "handover_rules": [
+    "倒漿：用 engine sheet（f1、f2-nostream、f3）。engine 只在 f2-nostream 顯示期間畫漿弧（ladle_mouth→對應籠口 pour_target），f3 前結束。不要和有液流的 f2 同時使用。",
+    "揭蓋：三格都畫了手持蓋。持蓋動畫期間 engine 蓋必須隱藏。若一定要讓蓋從籠口彈到手上：彈飛階段先顯示 idle，蓋到手的那一刻隱藏 engine 蓋，再切 lid f1→f2→f3。v6 工程預設背景是空籠口，蓋為獨立 PNG，依 cages[].lid_* 放置或隱藏。",
+    "拿粿：engine 粿飛行期間顯示 idle。粿到手的同一刻隱藏 engine 粿，切換 take f1→f2→f3。",
+    "出餐：播 f1→f2→f3。f3 切到 f4 的那一刻，在 f3 release_point 的 world 座標 spawn 一塊獨立的粿，飛到 red_basket_drop。f4 為最後一格。"
+  ]
+}
