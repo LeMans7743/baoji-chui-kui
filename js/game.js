@@ -69,7 +69,6 @@
     ['stove', 'assets/04-stove.png'],
     ['fg', 'assets/05b-foreground-v2-crate-fan.png'],
     ['stage', 'assets/09-stage-traditional-stove-mobile-v2.jpg'],
-    ['baoge', 'assets/baoge-fullbody-34-idle-smile.png'],
     ['hudSheet', 'assets/baoge-hud-avatars-sheet.jpg'],
     ['bustSheet', 'assets/baoge-expressions-bust-sheet.jpg'],
     ['combo', 'assets/baoge-combo-closeup.jpg'],
@@ -86,7 +85,8 @@
   // Hit size is the visible pot; the cake is drawn at KUEH_WIDTH_RATIO of that width.
   const KUEH_WIDTH_RATIO = 0.72;
   const BAOGE_FLOOR = 1040;
-  const BAOGE_H = Math.round(H * 0.38);
+  // Standing height is assigned from the action manifest. It is not a fixed size.
+  let BAOGE_H = 0;
   const BAOGE_HOME_X = 860;
   const CRITTER_LIFE = 3;
   const EVENT_SCORE = 50;
@@ -129,9 +129,20 @@
   }
 
   async function loadAll() {
+    const manifestRes = await fetch('assets/actions/manifest.json');
+    if (!manifestRes.ok) throw new Error('action manifest missing');
+    applyActionManifest(await manifestRes.json());
     await Promise.all(ASSET_LIST.map(async ([k, src]) => {
       assets[k] = await loadImage(src);
     }));
+    assets.baoge = await loadImage(manifestAssetUrl(actionManifest.actions.lid.props.idle_frame));
+    idleMetrics = measureIdle(assets.baoge);
+    IDLE_SCALE = BAOGE_H / Math.max(1, idleMetrics.footY - idleMetrics.headY);
+    for (const key of Object.keys(SHEET_KEY)) {
+      const spec = actionManifest.actions[key];
+      const rel = key === 'pour' && spec.recommended_sheet ? spec.recommended_sheet : spec.sheet;
+      assets[SHEET_KEY[key]] = await loadImage(manifestAssetUrl(rel));
+    }
   }
 
   function defaultSave() {
@@ -404,6 +415,7 @@
       sparks: [],
       selectedId: 'a1',
       act: null,
+      vis: null,
       critter: null,
       nextCritter: 30,
       edgeFlash: 0,
@@ -823,8 +835,9 @@
       }
     }
     if (timely) play.stats.serves += 1;
-    spawnDrop(st);
-    beginAct('place', 0.6, {
+    st.kuehHandoff = 'sprite';
+    startSheetVis('serve', st, ZONES.basket.x + ZONES.basket.w / 2, st.shownProgress);
+    beginAct('place', sheetSeconds('serve'), {
       x: ZONES.basket.x + ZONES.basket.w * 0.55,
       y: ZONES.basket.y + ZONES.basket.h * 0.45,
     });
@@ -865,7 +878,8 @@
     }
     setAvatar(AV.fire, 0.8);
     floatText(st.x + st.w / 2, st.y + st.h / 2, '倒漿', 'ok');
-    beginAct('pour', 0.8, { x: st.x + st.w / 2, y: st.y + 20 });
+    beginAct('pour', sheetSeconds('pour'), { x: st.x + st.w / 2, y: st.y + 20 });
+    startSheetVis('pour', st, st.x + st.w / 2);
     approachBaoge(st.x + st.w / 2);
   }
 
@@ -874,7 +888,11 @@
     play.selectedId = st.id;
     const grade = gradeFromProgress(st.progress, play.heat);
     awardUncover(st, grade);
-    beginAct('lid', 0.65, { x: st.x + st.w / 2, y: st.y + 10 });
+    beginAct('lid', sheetSeconds('lid'), { x: st.x + st.w / 2, y: st.y + 10 });
+    st.hideLid = true;
+    st.kuehHandoff = 'pot';
+    parkOtherPlates(st.id);
+    startFlightVis('lidFly', st, st.x + st.w / 2);
     approachBaoge(st.x + st.w / 2);
   }
 
@@ -1048,7 +1066,10 @@
     const c = play && play.critter;
     if (!c) return;
     const pos = critterPos(c);
-    if (tapped) beginAct('swat', 0.42, pos);
+    if (tapped) {
+      beginAct('swat', sheetSeconds('swat'), pos);
+      startSheetVis('swat', null, pos.x);
+    }
     play.critter = null;
     const elapsed = ROUND_SEC - play.timeLeft;
     play.nextCritter = Math.max(play.nextCritter, elapsed + 15 + Math.random() * 5);
@@ -1288,6 +1309,9 @@
           st.carried = false;
           st.carryAge = -1;
           st.revealAge = -1;
+          st.hideLid = false;
+          st.kuehHandoff = null;
+          if (play.vis && play.vis.stId === st.id) play.vis = null;
           floatText(st.x + st.w / 2, st.y, '出餐逾時', 'warn');
         }
       } else if (st.state === 'cooldown') {
@@ -1299,6 +1323,8 @@
           st.revealAge = -1;
           st.shownProgress = 0;
           st.lidOpen = 0.62;
+          st.hideLid = false;
+          st.kuehHandoff = null;
         }
       }
       if (st.flash > 0) st.flash -= dt;
@@ -1384,6 +1410,7 @@
       play.act.age += dt;
       if (play.act.age >= play.act.dur) play.act = null;
     }
+    stepVisual(dt);
     if (play.multiFlash > 0) play.multiFlash -= dt;
     if (play.ledger) {
       const cookingN = play.steamers.filter((s) => s.state === 'cooking').length;
@@ -1400,7 +1427,6 @@
   function stepSteamerVisual(st, dt) {
     if (st.revealAge >= 0) st.revealAge += dt;
     if (st.puffLife > 0) st.puffLife -= dt;
-    if (st.state === 'serve' && st.revealAge > 0.38 && st.carryAge < 0) st.carryAge = 0;
     if (st.carryAge >= 0 && !st.carried) {
       st.carryAge += dt;
       if (st.carryAge >= 0.55) st.carried = true;
@@ -2077,7 +2103,8 @@
 
     const traveling = st.state === 'serve' && (st.carried || st.carryAge >= 0);
     const cooking = st.state === 'cooking';
-    const showInPot = !cooking && (
+    const away = st.kuehHandoff === 'fly' || st.kuehHandoff === 'sprite' || st.kuehHandoff === 'gone';
+    const showInPot = !cooking && !away && (
       (st.state === 'serve' && !traveling)
       || (st.state === 'cooldown' && st.revealAge >= 0 && st.revealAge < 0.55)
       || (st.ruinedT > 0)
@@ -2086,11 +2113,11 @@
     if (cooking) {
       const stage = cookSteam(st);
       const hop = stage === 'heart' ? Math.abs(Math.sin(vizT * 14)) * 42 : 0;
-      drawClosedLid(cx, cy, rx, ry, st.kind, hop);
+      if (!st.hideLid) drawClosedLid(cx, cy, rx, ry, st.kind, hop);
       drawSteamStage(cx, cy - ry * 0.85 - hop, stage, vizT + (seedOf(st.id) % 5));
     } else {
       drawFrontRim(cx, cy, rx, ry, st.kind);
-      drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
+      if (!st.hideLid) drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
       if (st.puffLife > 0 && !traveling) drawPuff(cx, cy - ry * 0.2, st.puffLife);
     }
     if (showInPot) {
@@ -2188,7 +2215,7 @@
         drawSteamer(st);
       }
       drawBaoge();
-      drawActionPose();
+      drawActionProps();
       drawSparks();
 
       const action = currentAction();
@@ -2241,278 +2268,325 @@
     }
   }
 
+  let actionManifest = null;
+  let SHEET_SCALE = 0;
+  let FRAME = 0;
+  let ANCHOR_X = 0;
+  let ANCHOR_Y = 0;
+  let IDLE_SCALE = 0;
+  let idleMetrics = { headY: 0, footY: 1, footX: 0 };
+  let pourArcFrame = 1;
+  let serveReleaseFrame = 2;
+  const SHEET_MS = { pour: [], fan: [], lid: [], take: [], serve: [], swat: [] };
+  const SHEET_KEY = {
+    pour: 'pourSheet', fan: 'fanSheet', lid: 'lidSheet',
+    take: 'takeSheet', serve: 'serveSheet', swat: 'swatSheet',
+  };
+
+  function manifestAssetUrl(rel) {
+    const path = String(rel || '').trim().split(/\s+/)[0].replace(/^\.\.\//, '');
+    return 'assets/actions/' + path;
+  }
+
+  function applyActionManifest(data) {
+    actionManifest = data;
+    SHEET_SCALE = data.display_scale;
+    BAOGE_H = data.standing_height_screen_px;
+    FRAME = data.canvas[0];
+    ANCHOR_X = data.anchor[0];
+    ANCHOR_Y = data.anchor[1];
+    for (const key of Object.keys(SHEET_MS)) {
+      SHEET_MS[key] = data.actions[key].duration_ms.slice();
+    }
+    const rec = data.actions.pour.recommended_frames || [];
+    const arcAt = rec.findIndex((name) => String(name).indexOf('f2-nostream') >= 0);
+    pourArcFrame = arcAt >= 0 ? arcAt : 1;
+    const serveKeys = Object.keys(data.local_points.serve);
+    serveReleaseFrame = serveKeys.findIndex((key) => data.local_points.serve[key].release_point);
+  }
+
+  function measureIdle(img) {
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const data = g.getImageData(0, 0, c.width, c.height).data;
+    let headY = c.height;
+    let footY = 0;
+    let minX = c.width;
+    let maxX = 0;
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (data[(y * c.width + x) * 4 + 3] > 20) {
+          if (y < headY) headY = y;
+          if (y > footY) footY = y;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+    }
+    let sum = 0;
+    let n = 0;
+    const y0 = Math.max(0, footY - 6);
+    for (let y = y0; y <= footY; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (data[(y * c.width + x) * 4 + 3] > 20) {
+          sum += x;
+          n += 1;
+        }
+      }
+    }
+    return { headY, footY, footX: n ? sum / n : c.width / 2, minX, maxX };
+  }
+
+  function sheetSeconds(kind) {
+    const ms = SHEET_MS[kind] || [];
+    return ms.reduce((a, b) => a + b, 0) / 1000;
+  }
+
+  function sheetFrame(kind, ageSec) {
+    const ms = SHEET_MS[kind];
+    if (!ms || !ms.length) return 0;
+    let t = ageSec * 1000;
+    const total = ms.reduce((a, b) => a + b, 0);
+    if (kind === 'fan') t %= total;
+    let acc = 0;
+    for (let i = 0; i < ms.length; i++) {
+      acc += ms[i];
+      if (t < acc) return i;
+    }
+    return ms.length - 1;
+  }
+
+  function localPoint(action, frameName, name) {
+    const block = actionManifest.local_points[action][frameName];
+    return block[name];
+  }
+
+  function localToWorld(lx, ly, footX, footY, mirror) {
+    const x = mirror ? (FRAME - 1 - lx) : lx;
+    return {
+      x: footX + SHEET_SCALE * (x - ANCHOR_X),
+      y: footY + SHEET_SCALE * (ly - ANCHOR_Y),
+    };
+  }
+
+  function mirrorFor(kind, targetX, footX) {
+    const facing = (actionManifest.facing && actionManifest.facing[kind]) || 'left';
+    return facing === 'left' ? targetX > footX : targetX < footX;
+  }
+
+  function startSheetVis(kind, st, targetX, look) {
+    if (!play) return;
+    play.vis = {
+      kind,
+      age: 0,
+      frame: 0,
+      stId: st ? st.id : '',
+      mirror: mirrorFor(kind, targetX, play.baoge.x),
+      spawned: false,
+      look: look || (st ? st.shownProgress : 0),
+    };
+  }
+
+  function startFlightVis(kind, st, targetX) {
+    startSheetVis(kind, st, targetX);
+  }
+
+  function parkOtherPlates(exceptId) {
+    if (!play) return;
+    for (const s of play.steamers) {
+      if (s.id !== exceptId && s.kuehHandoff === 'sprite') s.kuehHandoff = 'pot';
+    }
+  }
+
+  function steamerById(id) {
+    return play && play.steamers.find((s) => s.id === id);
+  }
+
+  function spawnServeKueh(v) {
+    if (!v || v.spawned) return;
+    v.spawned = true;
+    const rel = localPoint('serve', 'f' + (serveReleaseFrame + 1), 'release_point');
+    const p = localToWorld(rel[0], rel[1], play.baoge.x, play.baoge.y, v.mirror);
+    if (!play.drops) play.drops = [];
+    play.drops.push({
+      x: p.x,
+      y: p.y,
+      look: v.look > 0 ? v.look : 0,
+      age: 0,
+      dur: SHEET_MS.serve[SHEET_MS.serve.length - 1] / 1000,
+      seed: v.stId || 'serve',
+    });
+    const st = steamerById(v.stId);
+    if (st) st.kuehHandoff = 'gone';
+  }
+
+  function finishVisual(v) {
+    if (v.kind === 'lid') {
+      const st = steamerById(v.stId);
+      if (st) st.kuehHandoff = 'fly';
+      play.vis = {
+        kind: 'kuehFly', age: 0, frame: 0, stId: v.stId, mirror: v.mirror, spawned: false, look: st ? st.shownProgress : 0,
+      };
+      return;
+    }
+    if (v.kind === 'take') {
+      play.vis = {
+        kind: 'hold', age: 0, frame: SHEET_MS.take.length - 1, stId: v.stId, mirror: v.mirror, spawned: false, look: v.look,
+      };
+      return;
+    }
+    if (v.kind === 'serve') spawnServeKueh(v);
+    if (v.kind === 'swat' || v.kind === 'pour') {
+      const back = play.steamers.find((s) => s.state === 'serve' && s.kuehHandoff === 'sprite');
+      if (back) {
+        play.vis = {
+          kind: 'hold', age: 0, frame: SHEET_MS.take.length - 1, stId: back.id, spawned: false,
+          mirror: mirrorFor('take', back.x + back.w / 2, play.baoge.x), look: back.shownProgress,
+        };
+        return;
+      }
+    }
+    play.vis = null;
+  }
+
+  function stepVisual(dt) {
+    const v = play && play.vis;
+    if (!v || v.kind === 'hold') return;
+    const prev = v.frame;
+    v.age += dt;
+    if (v.kind === 'lidFly') {
+      if (v.age >= SHEET_MS.lid[0] / 1000) {
+        play.vis = { kind: 'lid', age: 0, frame: 0, stId: v.stId, mirror: v.mirror, spawned: false, look: v.look };
+      }
+      return;
+    }
+    if (v.kind === 'kuehFly') {
+      if (v.age >= SHEET_MS.take[0] / 1000) {
+        const st = steamerById(v.stId);
+        if (st) st.kuehHandoff = 'sprite';
+        play.vis = { kind: 'take', age: 0, frame: 0, stId: v.stId, mirror: v.mirror, spawned: false, look: st ? st.shownProgress : v.look };
+      }
+      return;
+    }
+    if (!SHEET_MS[v.kind]) return;
+    const frame = sheetFrame(v.kind, v.age);
+    if (v.kind === 'serve' && prev <= serveReleaseFrame && frame > serveReleaseFrame) spawnServeKueh(v);
+    v.frame = frame;
+    if (v.kind !== 'fan' && v.age >= sheetSeconds(v.kind)) finishVisual(v);
+  }
+
+  function drawSheetFrame(img, frame, mirror, footX, footY) {
+    if (!img) return;
+    ctx.save();
+    ctx.translate(footX, footY);
+    ctx.scale(mirror ? -SHEET_SCALE : SHEET_SCALE, SHEET_SCALE);
+    ctx.drawImage(img, frame * FRAME, 0, FRAME, FRAME, -ANCHOR_X, -ANCHOR_Y, FRAME, FRAME);
+    ctx.restore();
+  }
+
+  function drawIdleBody(footX, footY) {
+    if (!assets.baoge || !IDLE_SCALE) return;
+    const s = IDLE_SCALE;
+    ctx.drawImage(
+      assets.baoge,
+      footX - idleMetrics.footX * s,
+      footY - idleMetrics.footY * s,
+      assets.baoge.width * s,
+      assets.baoge.height * s,
+    );
+  }
+
   function drawBaoge() {
-    if (!assets.baoge) return;
-    const bx = play ? play.baoge.x : BAOGE_HOME_X;
-    const by = play ? play.baoge.y : BAOGE_FLOOR;
-    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
-    // Standing sprite only. There is no crouch sheet, so the body is never squashed.
-    ctx.drawImage(assets.baoge, bx - bw / 2, by - BAOGE_H, bw, BAOGE_H);
-  }
-
-  function bodyMetrics() {
-    const b = play.baoge;
-    const bw = BAOGE_H * (assets.baoge.width / assets.baoge.height);
-    const head = b.y - BAOGE_H;
-    return {
-      x: b.x,
-      y: b.y,
-      bw,
-      head,
-      // Painted shoulders on the standing sheet. His right is the viewer's left.
-      sRx: b.x - bw * 0.16,
-      sRy: head + BAOGE_H * 0.30,
-      sLx: b.x + bw * 0.16,
-      sLy: head + BAOGE_H * 0.30,
-    };
-  }
-
-  function bendArm(sx, sy, hx, hy, bend) {
-    const mx = (sx + hx) / 2;
-    const my = (sy + hy) / 2;
-    const len = Math.hypot(hx - sx, hy - sy) || 1;
-    return {
-      x: mx + (-(hy - sy) / len) * bend,
-      y: my + ((hx - sx) / len) * bend,
-    };
-  }
-
-  function outsideFace(m, hx, hy) {
-    const faceL = m.x - m.bw * 0.16;
-    const faceR = m.x + m.bw * 0.16;
-    const faceB = m.head + BAOGE_H * 0.32;
-    if (hy < faceB && hx > faceL && hx < faceR) {
-      hx = hx < m.x ? faceL - 28 : faceR + 28;
+    const footX = play ? play.baoge.x : BAOGE_HOME_X;
+    const footY = play ? play.baoge.y : BAOGE_FLOOR;
+    const v = play && play.vis;
+    if (v && v.kind === 'swat' && assets.swatSheet) {
+      drawSheetFrame(assets.swatSheet, sheetFrame('swat', v.age), v.mirror, footX, footY);
+      return;
     }
-    return { x: hx, y: hy };
+    if (v && SHEET_KEY[v.kind] && v.kind !== 'fan' && assets[SHEET_KEY[v.kind]]) {
+      drawSheetFrame(assets[SHEET_KEY[v.kind]], sheetFrame(v.kind, v.age), v.mirror, footX, footY);
+      return;
+    }
+    if (v && (v.kind === 'lidFly' || v.kind === 'kuehFly')) {
+      drawIdleBody(footX, footY);
+      return;
+    }
+    if (play && fanning && assets.fanSheet) {
+      const fanX = ZONES.fan.x + ZONES.fan.w / 2;
+      drawSheetFrame(assets.fanSheet, sheetFrame('fan', vizT), mirrorFor('fan', fanX, footX), footX, footY);
+      return;
+    }
+    if (v && v.kind === 'hold' && assets.takeSheet) {
+      drawSheetFrame(assets.takeSheet, SHEET_MS.take.length - 1, v.mirror, footX, footY);
+      return;
+    }
+    drawIdleBody(footX, footY);
   }
 
-  function drawPreviewArm(sx, sy, hx, hy, bend) {
-    const elbow = bendArm(sx, sy, hx, hy, bend);
+  function drawFlyingLid(x, y, kind) {
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#2a211c';
-    ctx.lineWidth = 18;
+    ctx.translate(x, y);
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(elbow.x, elbow.y, hx, hy);
-    ctx.stroke();
-    ctx.strokeStyle = '#7eb6de';
-    ctx.lineWidth = 12;
-    ctx.stroke();
-    ctx.fillStyle = '#f2c3a2';
-    ctx.strokeStyle = '#2a211c';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(hx, hy, 12, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 54, 18, -0.35, 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#e7b45a' : '#d7e0e6';
     ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function markPreview(x, y) {
-    ctx.save();
-    ctx.font = `bold 16px ${UI_FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#2a211c';
-    ctx.fillStyle = '#ffe08a';
-    ctx.strokeText('預覽', x, y);
-    ctx.fillText('預覽', x, y);
-    ctx.restore();
-  }
-
-  function drawFanProp(hx, hy, rot) {
-    ctx.save();
-    ctx.translate(hx, hy);
-    ctx.rotate(rot);
-    ctx.fillStyle = '#8a5a32';
-    ctx.strokeStyle = '#2a211c';
     ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(-7, 8);
-    ctx.lineTo(-7, 78);
-    ctx.lineTo(7, 78);
-    ctx.lineTo(7, 8);
-    ctx.closePath();
-    ctx.fill();
+    ctx.strokeStyle = '#241c16';
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-8, 0);
-    ctx.quadraticCurveTo(-108, -20, -118, -78);
-    ctx.quadraticCurveTo(-20, -128, 96, -78);
-    ctx.quadraticCurveTo(108, -16, 8, 0);
-    ctx.closePath();
-    ctx.fillStyle = '#f4e2b0';
+    ctx.arc(0, -2, 7, 0, Math.PI * 2);
+    ctx.fillStyle = kind === 'bamboo' ? '#8a4e22' : '#5d6a72';
     ctx.fill();
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(90,55,25,0.7)';
-    ctx.lineWidth = 3;
-    for (let i = -3; i <= 3; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * 14, -8);
-      ctx.quadraticCurveTo(i * 16, -60, i * 12, -100);
-      ctx.stroke();
-    }
     ctx.restore();
   }
 
-  function drawLadle(hx, hy, tilt) {
-    ctx.save();
-    ctx.translate(hx, hy);
-    ctx.rotate(-0.9 + tilt * 1.7);
-    ctx.strokeStyle = '#2a211c';
-    ctx.fillStyle = '#c9843c';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, 92);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(0, -16, 42, 28, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#d5dee4';
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#f3ddb0';
-    ctx.beginPath();
-    ctx.ellipse(0, -18, 28, 16, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    if (tilt > 0.35) {
+  function drawActionProps() {
+    if (!play || !play.vis || !actionManifest) return;
+    const v = play.vis;
+    const st = steamerById(v.stId);
+    const footX = play.baoge.x;
+    const footY = play.baoge.y;
+    if (v.kind === 'pour' && sheetFrame('pour', v.age) === pourArcFrame && st) {
+      const mouth = localPoint('pour', 'f2', 'ladle_mouth');
+      const a = localToWorld(mouth[0], mouth[1], footX, footY, v.mirror);
+      const b = { x: st.x + st.w / 2, y: st.y + st.h * 0.42 };
       ctx.save();
       ctx.strokeStyle = '#f3ddb0';
-      ctx.lineWidth = 10;
+      ctx.lineWidth = 8;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(hx - 6, hy - 10);
-      ctx.quadraticCurveTo(hx - 70, hy + 40, hx - 120, hy + 130);
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo((a.x + b.x) / 2, Math.min(a.y, b.y) - 36, b.x, b.y);
       ctx.stroke();
       ctx.restore();
     }
+    if (v.kind === 'lidFly' && st) {
+      const t = Math.min(1, v.age / (SHEET_MS.lid[0] / 1000));
+      const ease = t * t * (3 - 2 * t);
+      const from = { x: st.x + st.w / 2, y: st.y + st.h * 0.22 };
+      const dest = localPoint('lid', 'f1', 'lid_center');
+      const to = localToWorld(dest[0], dest[1], footX, footY, v.mirror);
+      const x = from.x + (to.x - from.x) * ease;
+      const y = from.y + (to.y - from.y) * ease - Math.sin(ease * Math.PI) * 70;
+      drawFlyingLid(x, y, st.kind);
+    }
+    if (v.kind === 'kuehFly' && st) {
+      const t = Math.min(1, v.age / (SHEET_MS.take[0] / 1000));
+      const ease = t * t * (3 - 2 * t);
+      const from = { x: st.x + st.w / 2, y: st.y + st.h * 0.48 };
+      const dest = localPoint('take', 'f1', 'kueh_in_hand');
+      const to = localToWorld(dest[0], dest[1], footX, footY, v.mirror);
+      const x = from.x + (to.x - from.x) * ease;
+      const y = from.y + (to.y - from.y) * ease - Math.sin(ease * Math.PI) * 60;
+      const kuehW = Math.min(150, st.w * 0.55);
+      drawKueh(x, y, kuehW, kuehW * 0.5, st.shownProgress, 1, st.id);
+    }
   }
-
-  function drawTray(x, y, tilt) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(tilt);
-    ctx.fillStyle = '#c4843c';
-    ctx.strokeStyle = '#2a211c';
-    ctx.lineWidth = 4;
-    roundRect(ctx, -78, -16, 156, 32, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#e0b56a';
-    ctx.fillRect(-70, -12, 140, 8);
-    ctx.restore();
-  }
-
-  function drawFanArm(m) {
-    const phase = fanPhase();
-    const hand = outsideFace(m, m.x + phase * 200, m.head + BAOGE_H * 0.62);
-    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, phase * 50);
-    drawFanProp(hand.x, hand.y, phase * 1.15);
-    markPreview(hand.x + (phase < 0 ? -70 : 90), hand.y + 36);
-  }
-
-  function drawPourArm(m, act) {
-    const lift = Math.min(1, act.age / 0.28);
-    const tilt = Math.min(1, Math.max(0, (act.age - 0.18) / 0.32));
-    const hand = outsideFace(m, m.x - 170, m.head + BAOGE_H * 0.34);
-    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, -30);
-    drawLadle(hand.x, hand.y, tilt);
-    markPreview(hand.x - 20, hand.y - 110);
-  }
-
-  function drawLidArm(m, act) {
-    const lift = Math.min(1, act.age / 0.22);
-    const hand = outsideFace(m, m.x - 190, m.head - 30 * lift);
-    drawPreviewArm(m.sRx, m.sRy, hand.x, hand.y, -20);
-    ctx.save();
-    ctx.translate(hand.x, hand.y - 36);
-    ctx.rotate(-0.5);
-    ctx.fillStyle = '#d5dde3';
-    ctx.strokeStyle = '#2a211c';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 78, 28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, -6, 10, 0, Math.PI * 2);
-    ctx.fillStyle = '#8d98a1';
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-    markPreview(hand.x - 90, hand.y - 70);
-  }
-
-  function carryingNow() {
-    return play.steamers.some((s) => s.state === 'serve' && (s.carried || s.carryAge >= 0));
-  }
-
-  function trayPoint() {
-    const m = bodyMetrics();
-    return { x: m.x, y: m.head + BAOGE_H * 0.60 };
-  }
-
-  function drawCarryArms(m) {
-    const tray = trayPoint();
-    drawPreviewArm(m.sRx, m.sRy, tray.x - 58, tray.y, 20);
-    drawPreviewArm(m.sLx, m.sLy, tray.x + 58, tray.y, -20);
-    drawTray(tray.x, tray.y, 0);
-    markPreview(tray.x, tray.y - 36);
-  }
-
-  function drawPlaceArms(m, act) {
-    const u = Math.min(1, act.age / act.dur);
-    const tray = trayPoint();
-    const x = tray.x + (act.x - tray.x) * u * 0.72;
-    const y = tray.y + (act.y - tray.y) * u;
-    const tilt = u * 0.5;
-    drawPreviewArm(m.sRx, m.sRy, x - 50, y, 16);
-    drawPreviewArm(m.sLx, m.sLy, x + 40, y, -10);
-    drawTray(x, y, tilt);
-    markPreview(x, y - 34);
-  }
-
-  function drawSwatArm(m, act) {
-    const u = Math.min(1, act.age / 0.22);
-    const back = Math.max(0, (act.age - 0.22) / 0.2);
-    const sweep = Math.sin(Math.min(1, u) * Math.PI) * (1 - back);
-    const dir = act.x < m.x ? -1 : 1;
-    const sx = dir < 0 ? m.sRx : m.sLx;
-    const sy = dir < 0 ? m.sRy : m.sLy;
-    const hx = m.x + dir * (80 + sweep * 210);
-    const hy = m.sRy - 20 - sweep * 90;
-    const hand = outsideFace(m, hx, hy);
-    drawPreviewArm(sx, sy, hand.x, hand.y, dir * -36);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,244,210,0.9)';
-    ctx.lineWidth = 16;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(m.x + dir * 40, sy - 80, hand.x, hand.y);
-    ctx.stroke();
-    ctx.restore();
-    markPreview(hand.x, hand.y - 36);
-  }
-
-  function drawActionPose() {
-    if (!play || !assets.baoge) return;
-    const m = bodyMetrics();
-    const act = play.act && play.act.age < play.act.dur ? play.act : null;
-    const rightBusy = act && (act.kind === 'pour' || act.kind === 'lid' || act.kind === 'place');
-    if (fanning && !rightBusy) drawFanArm(m);
-    if (act && act.kind === 'pour') drawPourArm(m, act);
-    else if (act && act.kind === 'lid') drawLidArm(m, act);
-    else if (act && act.kind === 'place') drawPlaceArms(m, act);
-    else if (!act && carryingNow()) drawCarryArms(m);
-    if (act && act.kind === 'swat') drawSwatArm(m, act);
-  }
-
   function drawSparks() {
     if (!play || !play.sparks) return;
     ctx.save();
@@ -2682,11 +2756,15 @@
     c.closePath();
   }
 
+  let visualPause = false;
+
   function loop(ts) {
     const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
     lastTs = ts;
-    vizT += dt;
-    update(dt);
+    if (!visualPause) {
+      vizT += dt;
+      update(dt);
+    }
     draw();
     requestAnimationFrame(loop);
   }
@@ -2766,8 +2844,30 @@
           baogeY: play.baoge.y,
           avatar: avatarExpr,
           fanSwing: fanPhase(),
-          pose: (play.act && play.act.age < play.act.dur && play.act.kind)
-            || (fanning ? 'fan' : (carryingNow() ? 'carry' : 'idle')),
+          pose: (play.vis && play.vis.kind) || (fanning ? 'fan' : 'idle'),
+          manifest: actionManifest && {
+            status: actionManifest.status,
+            scale: actionManifest.display_scale,
+            stand: actionManifest.standing_height_screen_px,
+            anchor: actionManifest.anchor,
+            scene: actionManifest.scene,
+            stations: Object.fromEntries(Object.entries(actionManifest.stations).map(([k, v]) => [k, v.foot_world])),
+          },
+          vis: play.vis && {
+            kind: play.vis.kind,
+            age: play.vis.age,
+            frame: SHEET_MS[play.vis.kind] ? sheetFrame(play.vis.kind, play.vis.age) : play.vis.frame,
+            spawned: !!play.vis.spawned,
+            stId: play.vis.stId,
+          },
+          drops: (play.drops || []).length,
+          body: {
+            footX: play.baoge.x,
+            footY: play.baoge.y,
+            top: play.baoge.y - BAOGE_H,
+            left: play.baoge.x + (idleMetrics.minX - idleMetrics.footX) * IDLE_SCALE,
+            right: play.baoge.x + (idleMetrics.maxX - idleMetrics.footX) * IDLE_SCALE,
+          },
           heartStreak: play.heartStreak,
           multiFlash: play.multiFlash,
           timeLeft: play.timeLeft,
@@ -2780,6 +2880,8 @@
             progress: s.progress,
             unlocked: s.unlocked,
             steam: s.state === 'cooking' ? cookSteam(s) : null,
+            hideLid: !!s.hideLid,
+            kueh: s.kuehHandoff || null,
           })),
           hint: $('touch-hint').textContent,
           comboText: $('hud-combo').textContent,
@@ -2811,6 +2913,7 @@
       actServe() { tryServe(); },
       setFan(on) { fanning = !!on; },
       swat() { if (play.critter) resolveCritter(true); },
+      pause(on) { visualPause = !!on; },
       seed(n) {
         let s = n >>> 0;
         Math.random = () => {

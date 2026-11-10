@@ -1,0 +1,916 @@
+{
+ "status": "PREVIEW v4 (size 430) — all coordinates are visual estimates from the 1920x1080 art (~±10 world px); engine must fine-tune. NOT pixel-verified.",
+ "scene": "/home/box/game-art-refs/stage-traditional-stove-mobile-v2.jpg",
+ "scene_size": [
+  1920,
+  1080
+ ],
+ "canvas": [
+  768,
+  768
+ ],
+ "anchor": [
+  384,
+  720
+ ],
+ "anchor_note": "foot-bottom-center; 48px transparent padding below (rows 720-767); crouch same anchor",
+ "display_scale": 0.6656,
+ "standing_height_screen_px": 430,
+ "formula": "world = foot + scale*(local - anchor); foot = target - scale*offset",
+ "world_points": {
+  "alu_small_lid_knob": [
+   497,
+   356
+  ],
+  "alu_small_mouth": [
+   502,
+   416
+  ],
+  "alu_big_lid_knob": [
+   793,
+   174
+  ],
+  "alu_big_mouth": [
+   793,
+   221
+  ],
+  "bamboo_top_lid_knob": [
+   1161,
+   253
+  ],
+  "bamboo_top_mouth": [
+   1159,
+   285
+  ],
+  "bamboo_seam_1": [
+   1162,
+   366
+  ],
+  "bamboo_seam_2": [
+   1165,
+   435
+  ],
+  "bamboo_seam_3": [
+   1168,
+   497
+  ],
+  "bamboo_seam_4": [
+   1170,
+   572
+  ],
+  "bamboo_seam_5": [
+   1172,
+   647
+  ],
+  "bamboo_tower_bottom": [
+   1172,
+   712
+  ],
+  "fire_mouth_center": [
+   947,
+   600
+  ],
+  "fire_mouth_bottom_lip": [
+   950,
+   705
+  ],
+  "red_basket_rim_center": [
+   253,
+   802
+  ],
+  "red_basket_drop": [
+   253,
+   830
+  ],
+  "fan_prop_on_floor_bbox": [
+   1012,
+   656,
+   1294,
+   881
+  ]
+ },
+ "floor_standable_polygon": [
+  [
+   460,
+   985
+  ],
+  [
+   1040,
+   985
+  ],
+  [
+   1040,
+   960
+  ],
+  [
+   1320,
+   960
+  ],
+  [
+   1320,
+   900
+  ],
+  [
+   1900,
+   900
+  ],
+  [
+   1900,
+   1075
+  ],
+  [
+   460,
+   1075
+  ]
+ ],
+ "floor_note": "below stove body/legs and bamboo stand legs; fan prop bbox excluded. Character never walks upward.",
+ "stations": {
+  "stove_front": {
+   "actions": [
+    "pour",
+    "lid",
+    "take"
+   ],
+   "targets": [
+    "alu_small_mouth",
+    "alu_big_mouth"
+   ],
+   "foot_world": [
+    700,
+    1010
+   ],
+   "action_points_world": {
+    "pour": {
+     "f1": {
+      "ladle_mouth": [
+       554.9,
+       624.0
+      ]
+     },
+     "f2": {
+      "ladle_mouth": [
+       554.2,
+       635.9
+      ]
+     },
+     "f3": {
+      "ladle_mouth": [
+       708.0,
+       596.0
+      ]
+     }
+    },
+    "lid": {
+     "f1": {
+      "lid_center": [
+       598.2,
+       693.2
+      ],
+      "hand": [
+       590.8,
+       671.9
+      ]
+     },
+     "f2": {
+      "lid_center": [
+       614.8,
+       589.3
+      ],
+      "hand": [
+       618.8,
+       564.0
+      ]
+     },
+     "f3": {
+      "lid_center": [
+       577.5,
+       674.5
+      ]
+     }
+    },
+    "take": {
+     "f1": {
+      "kueh_in_hand": [
+       596.2,
+       657.2
+      ],
+      "tray_center": [
+       656.1,
+       759.7
+      ]
+     },
+     "f2": {
+      "kueh_in_hand": [
+       624.1,
+       725.1
+      ],
+      "tray_center": [
+       647.4,
+       757.1
+      ]
+     },
+     "f3": {
+      "kueh_on_tray": [
+       646.1,
+       750.4
+      ],
+      "tray_center": [
+       647.4,
+       757.1
+      ]
+     }
+    }
+   }
+  },
+  "bamboo_front": {
+   "actions": [
+    "pour",
+    "lid",
+    "take"
+   ],
+   "targets": [
+    "bamboo_top_mouth"
+   ],
+   "note": "only the TOP lid of the bamboo tower is visibly openable; seams 1-5 are visual layer lines only (candidate points if design wants layer picking, not real separate openings in the art)",
+   "foot_world": [
+    1440,
+    915
+   ],
+   "action_points_world": {
+    "pour": {
+     "f1": {
+      "ladle_mouth": [
+       1294.9,
+       529.0
+      ]
+     },
+     "f2": {
+      "ladle_mouth": [
+       1294.2,
+       540.9
+      ]
+     },
+     "f3": {
+      "ladle_mouth": [
+       1448.0,
+       501.0
+      ]
+     }
+    },
+    "lid": {
+     "f1": {
+      "lid_center": [
+       1338.2,
+       598.2
+      ],
+      "hand": [
+       1330.8,
+       576.9
+      ]
+     },
+     "f2": {
+      "lid_center": [
+       1354.8,
+       494.3
+      ],
+      "hand": [
+       1358.8,
+       469.0
+      ]
+     },
+     "f3": {
+      "lid_center": [
+       1317.5,
+       579.5
+      ]
+     }
+    },
+    "take": {
+     "f1": {
+      "kueh_in_hand": [
+       1336.2,
+       562.2
+      ],
+      "tray_center": [
+       1396.1,
+       664.7
+      ]
+     },
+     "f2": {
+      "kueh_in_hand": [
+       1364.1,
+       630.1
+      ],
+      "tray_center": [
+       1387.4,
+       662.1
+      ]
+     },
+     "f3": {
+      "kueh_on_tray": [
+       1386.1,
+       655.4
+      ],
+      "tray_center": [
+       1387.4,
+       662.1
+      ]
+     }
+    }
+   }
+  },
+  "fan_crouch": {
+   "actions": [
+    "fan"
+   ],
+   "targets": [
+    "fire_mouth_bottom_lip",
+    "fire_mouth_center"
+   ],
+   "foot_world": [
+    850,
+    975
+   ],
+   "action_points_world": {
+    "fan": {
+     "f1": {
+      "fan_center": [
+       784.8,
+       901.8
+      ]
+     },
+     "f2": {
+      "fan_center": [
+       965.1,
+       831.2
+      ],
+      "fan_tip": [
+       994.4,
+       831.2
+      ]
+     },
+     "f3": {
+      "fan_center": [
+       908.6,
+       876.5
+      ]
+     }
+    }
+   }
+  },
+  "serve": {
+   "actions": [
+    "serve"
+   ],
+   "targets": [
+    "red_basket_drop"
+   ],
+   "foot_world": [
+    560,
+    1005
+   ],
+   "action_points_world": {
+    "serve": {
+     "f1": {
+      "kueh_on_tray": [
+       512.1,
+       742.8
+      ]
+     },
+     "f2": {
+      "kueh_on_tray": [
+       465.5,
+       774.7
+      ]
+     },
+     "f3": {
+      "kueh_on_tray": [
+       451.5,
+       843.9
+      ],
+      "release_point": [
+       451.5,
+       843.9
+      ]
+     },
+     "f4": {
+      "tray_center_empty": [
+       454.2,
+       848.6
+      ]
+     }
+    }
+   }
+  }
+ },
+ "local_points": {
+  "pour": {
+   "f1": {
+    "ladle_mouth": [
+     166,
+     140
+    ]
+   },
+   "f2": {
+    "ladle_mouth": [
+     165,
+     158
+    ]
+   },
+   "f3": {
+    "ladle_mouth": [
+     396,
+     98
+    ]
+   }
+  },
+  "fan": {
+   "f1": {
+    "fan_center": [
+     286,
+     610
+    ]
+   },
+   "f2": {
+    "fan_center": [
+     557,
+     504
+    ],
+    "fan_tip": [
+     601,
+     504
+    ]
+   },
+   "f3": {
+    "fan_center": [
+     472,
+     572
+    ]
+   }
+  },
+  "lid": {
+   "f1": {
+    "lid_center": [
+     231,
+     244
+    ],
+    "hand": [
+     220,
+     212
+    ]
+   },
+   "f2": {
+    "lid_center": [
+     256,
+     88
+    ],
+    "hand": [
+     262,
+     50
+    ]
+   },
+   "f3": {
+    "lid_center": [
+     200,
+     216
+    ]
+   }
+  },
+  "take": {
+   "f1": {
+    "kueh_in_hand": [
+     228,
+     190
+    ],
+    "tray_center": [
+     318,
+     344
+    ]
+   },
+   "f2": {
+    "kueh_in_hand": [
+     270,
+     292
+    ],
+    "tray_center": [
+     305,
+     340
+    ]
+   },
+   "f3": {
+    "kueh_on_tray": [
+     303,
+     330
+    ],
+    "tray_center": [
+     305,
+     340
+    ]
+   }
+  },
+  "serve": {
+   "f1": {
+    "kueh_on_tray": [
+     312,
+     326
+    ]
+   },
+   "f2": {
+    "kueh_on_tray": [
+     242,
+     374
+    ]
+   },
+   "f3": {
+    "kueh_on_tray": [
+     221,
+     478
+    ],
+    "release_point": [
+     221,
+     478
+    ]
+   },
+   "f4": {
+    "tray_center_empty": [
+     225,
+     485
+    ]
+   }
+  },
+  "swat": {
+   "f1": {
+    "newspaper_tip": [
+     356,
+     150
+    ]
+   },
+   "f2": {
+    "newspaper_tip": [
+     612,
+     540
+    ]
+   },
+   "f3": {
+    "impact_point": [
+     559,
+     712
+    ]
+   }
+  }
+ },
+ "offsets_from_anchor": {
+  "pour": {
+   "f1": {
+    "ladle_mouth": [
+     -218,
+     -580
+    ]
+   },
+   "f2": {
+    "ladle_mouth": [
+     -219,
+     -562
+    ]
+   },
+   "f3": {
+    "ladle_mouth": [
+     12,
+     -622
+    ]
+   }
+  },
+  "fan": {
+   "f1": {
+    "fan_center": [
+     -98,
+     -110
+    ]
+   },
+   "f2": {
+    "fan_center": [
+     173,
+     -216
+    ],
+    "fan_tip": [
+     217,
+     -216
+    ]
+   },
+   "f3": {
+    "fan_center": [
+     88,
+     -148
+    ]
+   }
+  },
+  "lid": {
+   "f1": {
+    "lid_center": [
+     -153,
+     -476
+    ],
+    "hand": [
+     -164,
+     -508
+    ]
+   },
+   "f2": {
+    "lid_center": [
+     -128,
+     -632
+    ],
+    "hand": [
+     -122,
+     -670
+    ]
+   },
+   "f3": {
+    "lid_center": [
+     -184,
+     -504
+    ]
+   }
+  },
+  "take": {
+   "f1": {
+    "kueh_in_hand": [
+     -156,
+     -530
+    ],
+    "tray_center": [
+     -66,
+     -376
+    ]
+   },
+   "f2": {
+    "kueh_in_hand": [
+     -114,
+     -428
+    ],
+    "tray_center": [
+     -79,
+     -380
+    ]
+   },
+   "f3": {
+    "kueh_on_tray": [
+     -81,
+     -390
+    ],
+    "tray_center": [
+     -79,
+     -380
+    ]
+   }
+  },
+  "serve": {
+   "f1": {
+    "kueh_on_tray": [
+     -72,
+     -394
+    ]
+   },
+   "f2": {
+    "kueh_on_tray": [
+     -142,
+     -346
+    ]
+   },
+   "f3": {
+    "kueh_on_tray": [
+     -163,
+     -242
+    ],
+    "release_point": [
+     -163,
+     -242
+    ]
+   },
+   "f4": {
+    "tray_center_empty": [
+     -159,
+     -235
+    ]
+   }
+  },
+  "swat": {
+   "f1": {
+    "newspaper_tip": [
+     -28,
+     -570
+    ]
+   },
+   "f2": {
+    "newspaper_tip": [
+     228,
+     -180
+    ]
+   },
+   "f3": {
+    "impact_point": [
+     175,
+     -8
+    ]
+   }
+  }
+ },
+ "actions": {
+  "pour": {
+   "frames": [
+    "pour/baoge-pour-f1.png",
+    "pour/baoge-pour-f2.png",
+    "pour/baoge-pour-f3.png"
+   ],
+   "sheet": "pour/baoge-pour-sheet.png",
+   "sheet_size": [
+    2304,
+    768
+   ],
+   "duration_ms": [
+    160,
+    260,
+    180
+   ],
+   "loop": false,
+   "props": {
+    "body_held": [
+     "ladle",
+     "batter inside ladle"
+    ],
+    "engine_moving": [
+     "batter arc ladle_mouth -> steamer mouth"
+    ],
+    "timing": "play f1 -> f2-nostream; engine draws arc only while f2-nostream shown; arc ends before f3",
+    "constraints": "never use baked-stream f2 together with engine arc"
+   },
+   "extra": [
+    "pour/baoge-pour-f2-nostream.png"
+   ],
+   "recommended_sheet": "pour/baoge-pour-engine-sheet.png",
+   "recommended_frames": [
+    "pour/baoge-pour-f1.png",
+    "pour/baoge-pour-f2-nostream.png",
+    "pour/baoge-pour-f3.png"
+   ],
+   "backup_sheet": "pour/baoge-pour-sheet.png (backup only, f2 has baked stream - NOT engine default)"
+  },
+  "fan": {
+   "frames": [
+    "fan/baoge-fan-f1.png",
+    "fan/baoge-fan-f2.png",
+    "fan/baoge-fan-f3.png"
+   ],
+   "sheet": "fan/baoge-fan-sheet.png",
+   "sheet_size": [
+    2304,
+    768
+   ],
+   "duration_ms": [
+    110,
+    110,
+    110
+   ],
+   "loop": true,
+   "props": {
+    "body_held": [
+     "bamboo hand fan"
+    ],
+    "engine_moving": [
+     "wind/fire FX toward fire_mouth_bottom_lip"
+    ]
+   }
+  },
+  "lid": {
+   "frames": [
+    "lid/baoge-lid-f1.png",
+    "lid/baoge-lid-f2.png",
+    "lid/baoge-lid-f3.png"
+   ],
+   "sheet": "lid/baoge-lid-sheet.png",
+   "sheet_size": [
+    2304,
+    768
+   ],
+   "duration_ms": [
+    150,
+    200,
+    200
+   ],
+   "loop": false,
+   "props": {
+    "body_held": [
+     "lid in hand in ALL f1-f3"
+    ],
+    "engine_moving": [
+     "optional lid pop from steamer mouth"
+    ],
+    "timing": "while any lid frame f1-f3 is shown, engine lid must be HIDDEN. If lid must pop from mouth to hand: during pop show idle (no lid), at arrival hide engine lid and switch to lid f1 -> f2 -> f3.",
+    "constraints": "showing lid f2 while engine lid is visible = two lids (NOT solved). Scene background still has baked lids on steamers (not cleared) - needs engine mask or separate background lid object; not solved by these character sprites.",
+    "idle_frame": "../bao-ge-faces/baoge-fullbody-34-idle-smile.png (different canvas; engine must align its own foot anchor)"
+   }
+  },
+  "take": {
+   "frames": [
+    "take/baoge-take-f1.png",
+    "take/baoge-take-f2.png",
+    "take/baoge-take-f3.png"
+   ],
+   "sheet": "take/baoge-take-sheet.png",
+   "sheet_size": [
+    2304,
+    768
+   ],
+   "duration_ms": [
+    150,
+    150,
+    220
+   ],
+   "loop": false,
+   "props": {
+    "body_held": [
+     "metal tray",
+     "kueh in hand f1-f2",
+     "kueh on tray f3"
+    ],
+    "engine_moving": [
+     "kueh flying from steamer mouth to hand"
+    ],
+    "timing": "during engine flight show idle (no kueh-in-hand pose exists; idle has no tray either); at arrival hide engine kueh in the same frame and switch take f1 -> f2 -> f3",
+    "constraints": "never show engine kueh and take f1/f2/f3 simultaneously",
+    "idle_frame": "../bao-ge-faces/baoge-fullbody-34-idle-smile.png (different canvas; engine must align its own foot anchor)"
+   }
+  },
+  "serve": {
+   "frames": [
+    "serve/baoge-serve-f1.png",
+    "serve/baoge-serve-f2.png",
+    "serve/baoge-serve-f3.png",
+    "serve/baoge-serve-f4.png"
+   ],
+   "sheet": "serve/baoge-serve-sheet.png",
+   "sheet_size": [
+    3072,
+    768
+   ],
+   "duration_ms": [
+    150,
+    170,
+    200,
+    240
+   ],
+   "loop": false,
+   "props": {
+    "body_held": [
+     "metal tray",
+     "kueh on tray f1-f3",
+     "empty tray f4"
+    ],
+    "engine_moving": [
+     "independent kueh spawned at f3 release_point"
+    ],
+    "timing": "f1 -> f2 -> f3; at the exact switch f3 -> f4 spawn engine kueh at f3 release_point world coords and fly to red_basket_drop; f4 is last frame",
+    "constraints": "no engine kueh before f4"
+   }
+  },
+  "swat": {
+   "frames": [
+    "swat/baoge-swat-f1.png",
+    "swat/baoge-swat-f2.png",
+    "swat/baoge-swat-f3.png"
+   ],
+   "sheet": "swat/baoge-swat-sheet.png",
+   "sheet_size": [
+    2304,
+    768
+   ],
+   "duration_ms": [
+    160,
+    90,
+    220
+   ],
+   "loop": false,
+   "props": {
+    "body_held": [
+     "rolled newspaper",
+     "impact star f3"
+    ],
+    "engine_moving": [
+     "pest"
+    ]
+   }
+  }
+ },
+ "facing": {
+  "pour": "left",
+  "lid": "left",
+  "take": "left",
+  "serve": "left",
+  "fan": "right",
+  "swat": "right",
+  "mirror": "x_local' = 767 - x_local"
+ },
+ "old_targets": "planner r3 boxes deprecated; archived in draft-v1/ only",
+ "display_height_note": "standing 646 canvas px -> 430 screen px (~40% of 1080), scale 0.6656, crouch same scale; 360 version in draft-v3-size360/",
+ "overview_note": "stations-overview.jpg shows 4 Bao-ge only as a position map; each station is a separate game state"
+}
