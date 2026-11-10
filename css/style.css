@@ -122,18 +122,18 @@ html, body {
 }
 
 #combo-popup {
-  position: absolute; inset: 0; z-index: 40;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.45); pointer-events: none;
+  position: absolute; left: 0; right: 0; top: 17%; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  background: none; pointer-events: none;
   animation: popIn 0.25s ease-out;
 }
 #combo-popup img {
-  width: min(42vw, 38vh); height: min(42vw, 38vh);
-  object-fit: cover; border-radius: 16px;
-  border: 4px solid #f5d27a; box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  width: min(18vw, 14vh); height: min(18vw, 14vh);
+  object-fit: cover; border-radius: 12px;
+  border: 3px solid #f5d27a; box-shadow: 0 6px 24px rgba(0,0,0,0.55);
 }
 .combo-popup-label {
-  margin-top: 0.6rem; font-size: clamp(20px, 4vw, 36px); font-weight: 800;
+  margin-top: 0.2rem; font-size: clamp(16px, 2.4vw, 28px); font-weight: 800;
   color: #ffe08a; text-shadow: 0 2px 8px #000;
 }
 @keyframes popIn {
@@ -152,7 +152,7 @@ html, body {
 }
 .title-bg {
   position: absolute; inset: 0;
-  background: #2a1510 url("../assets/09-stage-traditional-stove-mobile-v2.jpg") center/cover no-repeat;
+  background: #2a1510 center/cover no-repeat;
   filter: brightness(0.45) saturate(1.1);
   z-index: -1;
 }

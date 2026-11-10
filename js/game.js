@@ -63,12 +63,6 @@
 
   const assets = {};
   const ASSET_LIST = [
-    ['wall', 'assets/01-far-wall-lids.jpg'],
-    ['plate', 'assets/02-clean-plate-no-fx-1920x1080.jpg'],
-    ['fire', 'assets/03-fire.png'],
-    ['stove', 'assets/04-stove.png'],
-    ['fg', 'assets/05b-foreground-v2-crate-fan.png'],
-    ['stage', 'assets/09-stage-traditional-stove-mobile-v2.jpg'],
     ['hudSheet', 'assets/baoge-hud-avatars-sheet.jpg'],
     ['bustSheet', 'assets/baoge-expressions-bust-sheet.jpg'],
     ['combo', 'assets/baoge-combo-closeup.jpg'],
@@ -84,7 +78,10 @@
   // Steamers unlock over heat/time. Spread across the stove so each kueh reads on its own.
   // Hit size is the visible pot; the cake is drawn at KUEH_WIDTH_RATIO of that width.
   const KUEH_WIDTH_RATIO = 0.72;
-  const BAOGE_FLOOR = 1040;
+  // Floor line is assigned from the manifest station feet. Home x stays put.
+  let BAOGE_FLOOR = 0;
+  let fireOpening = null;
+  let basketDrop = null;
   // Standing height is assigned from the action manifest. It is not a fixed size.
   let BAOGE_H = 0;
   const BAOGE_HOME_X = 860;
@@ -135,14 +132,23 @@
     await Promise.all(ASSET_LIST.map(async ([k, src]) => {
       assets[k] = await loadImage(src);
     }));
-    assets.baoge = await loadImage(manifestAssetUrl(actionManifest.actions.lid.props.idle_frame));
+    assets.baoge = await loadImage(manifestAssetUrl(actionManifest.idle.file));
     idleMetrics = measureIdle(assets.baoge);
     IDLE_SCALE = BAOGE_H / Math.max(1, idleMetrics.footY - idleMetrics.headY);
+    assets.scene = await loadImage(manifestAssetUrl(actionManifest.scene));
+    assets.lidAlum = await loadImage(manifestAssetUrl(actionManifest.lids.aluminum));
+    assets.lidBamboo = await loadImage(manifestAssetUrl(actionManifest.lids.bamboo));
+    const bambooHeld = actionManifest.actions.lid.optional_bamboo_held;
+    if (bambooHeld && bambooHeld.sheet) {
+      assets.lidBambooSheet = await loadImage(manifestAssetUrl(bambooHeld.sheet));
+    }
     for (const key of Object.keys(SHEET_KEY)) {
       const spec = actionManifest.actions[key];
       const rel = key === 'pour' && spec.recommended_sheet ? spec.recommended_sheet : spec.sheet;
       assets[SHEET_KEY[key]] = await loadImage(manifestAssetUrl(rel));
     }
+    const titleBg = document.querySelector('.title-bg');
+    if (titleBg) titleBg.style.backgroundImage = `url(${manifestAssetUrl(actionManifest.scene)})`;
   }
 
   function defaultSave() {
@@ -681,6 +687,20 @@
     hint.style.transform = 'none';
   }
 
+  function aboveCage(st) {
+    const top = st && st.lidPaste ? st.lidPaste[1] : (st ? st.y : 0);
+    return top - 96;
+  }
+
+  function noticeY() {
+    let top = H;
+    for (const def of STEAMER_DEFS) {
+      const y = def.lidPaste ? def.lidPaste[1] : def.y;
+      if (y < top) top = y;
+    }
+    return top * 0.72;
+  }
+
   function floatText(x, y, text, cls) {
     const layer = $('float-layer');
     const el = document.createElement('div');
@@ -877,7 +897,7 @@
       play.ledger.slots[st.id] = (play.ledger.slots[st.id] || 0) + 1;
     }
     setAvatar(AV.fire, 0.8);
-    floatText(st.x + st.w / 2, st.y + st.h / 2, '倒漿', 'ok');
+    floatText(st.mouth ? st.mouth[0] : st.x + st.w / 2, aboveCage(st), '倒漿', 'ok');
     beginAct('pour', sheetSeconds('pour'), { x: st.x + st.w / 2, y: st.y + 20 });
     startSheetVis('pour', st, st.x + st.w / 2);
     approachBaoge(st.x + st.w / 2);
@@ -1086,7 +1106,7 @@
       play.combo = 0;
       // Heart-streak vs cockroach miss is unresolved: a miss is not a non-heart
       // grade, so the streak is left as-is until that call is decided.
-      floatText(st ? st.x + st.w / 2 : pos.x, st ? st.y : pos.y, `-${ROACH_PENALTY}`, 'penalty');
+      floatText(st ? (st.mouth ? st.mouth[0] : st.x + st.w / 2) : pos.x, st ? aboveCage(st) : pos.y, `-${ROACH_PENALTY}`, 'penalty');
     } else {
       stealOneKueh();
       const before = play.score;
@@ -1165,7 +1185,7 @@
       if (st.state === 'empty') pourSteamer(st);
       else if (st.state === 'cooking') uncoverSteamer(st);
       else if (st.state === 'serve') {
-        floatText(st.x + st.w / 2, st.y, '先送到左邊紅籃出餐！', 'warn');
+        floatText(st.mouth ? st.mouth[0] : st.x + st.w / 2, aboveCage(st), '先送到左邊紅籃出餐！', 'warn');
         approachBaoge(ZONES.basket.x + ZONES.basket.w - 20);
       }
     } else if (hit.type === 'walk') {
@@ -1240,9 +1260,10 @@
       if (!(avatarExpr === AV_SCARED && avatarHold > 0) && avatarExpr !== AV.fire) setAvatar(AV.fire, 0.5);
       const stroke = Math.max(0, fanPhase());
       if (stroke > 0.55 && Math.random() < 0.95) {
+        const opening = fireOpening || [0, 0, 0, 0];
         play.sparks.push({
-          x: 760 + Math.random() * 90,
-          y: 600 + Math.random() * 30,
+          x: opening[0] + Math.random() * (opening[2] - opening[0]),
+          y: opening[1] + Math.random() * (opening[3] - opening[1]),
           vx: -30 + Math.random() * 80,
           vy: -160 - Math.random() * 120,
           life: 0.28 + Math.random() * 0.25,
@@ -1312,7 +1333,7 @@
           st.hideLid = false;
           st.kuehHandoff = null;
           if (play.vis && play.vis.stId === st.id) play.vis = null;
-          floatText(st.x + st.w / 2, st.y, '出餐逾時', 'warn');
+          floatText(st.mouth ? st.mouth[0] : st.x + st.w / 2, aboveCage(st), '出餐逾時', 'warn');
         }
       } else if (st.state === 'cooldown') {
         st.cookTime -= dt;
@@ -1356,7 +1377,7 @@
       if (play.heat > 55 && roll < 0.34) {
         play.flareT = 1.2 + Math.random();
         setAvatar(AV.rush, 1.5);
-        floatText(W * 0.55, H * 0.55, '火勢暴衝！', 'bad');
+        floatText(W * 0.55, noticeY(), '火勢暴衝！', 'bad');
       } else if (roll < 0.62) {
         // steam burst threat on a cooking steamer
         const cooking = play.steamers.filter((s) => s.state === 'cooking');
@@ -1364,7 +1385,7 @@
           const t = cooking[Math.floor(Math.random() * cooking.length)];
           play.burstTarget = t.id;
           t.flash = 2.2;
-          floatText(t.x + t.w / 2, t.y - 10, '蒸汽要炸籠！快揭！', 'warn');
+          floatText(t.mouth ? t.mouth[0] : t.x + t.w / 2, aboveCage(t), '蒸汽要炸籠！快揭！', 'warn');
           setAvatar(AV.rush, 1.2);
           // if not uncovered soon, overflow
           setTimeout(() => {
@@ -1372,7 +1393,7 @@
             const s = play.steamers.find((x) => x.id === t.id);
             if (s && s.state === 'cooking' && play.burstTarget === t.id) {
               s.overflowed = true;
-              floatText(s.x + s.w / 2, s.y, '溢模！', 'bad');
+              floatText(s.mouth ? s.mouth[0] : s.x + s.w / 2, aboveCage(s), '溢模！', 'bad');
               play.burstTarget = null;
             }
           }, 2200);
@@ -1387,7 +1408,7 @@
         }
       } else {
         play.charcoalFlicker = Math.random() > 0.5 ? 1 : -0.6;
-        floatText(W * 0.5, H * 0.6, play.charcoalFlicker > 0 ? '炭火忽旺' : '炭火忽弱', 'warn');
+        floatText(W * 0.5, noticeY(), play.charcoalFlicker > 0 ? '炭火忽旺' : '炭火忽弱', 'warn');
         setTimeout(() => { if (play) play.charcoalFlicker = 0; }, 3000);
       }
     }
@@ -1510,10 +1531,10 @@
   function drawDonenessRing(st) {
     if (st.state !== 'cooking') return;
     const w = heatWindows(play.heat);
-    const mid = st.x + st.w / 2;
-    const side = mid < 1000 ? -1 : 1;
-    const cx = Math.max(48, Math.min(W - 48, mid + side * (st.w * 0.56)));
-    const cy = Math.max(210, st.y + 20);
+    const rReady = st.mouth ? st.mouth[0] : st.x + st.w / 2;
+    const lidTop = st.lidPaste ? st.lidPaste[1] : st.y;
+    const cx = Math.max(48, Math.min(W - 48, rReady));
+    const cy = lidTop - 26 - 6;
     const r = 26;
     ctx.save();
     ctx.lineCap = 'butt';
@@ -2030,8 +2051,7 @@
     let fade = 1;
     if (st.revealAge < 0.08) fade = st.revealAge / 0.08;
     else if (st.revealAge > 0.95) fade = Math.max(0, (1.2 - st.revealAge) / 0.25);
-    const cx = st.x + st.w / 2;
-    const cy = st.y + st.h - 4;
+    const cx = st.mouth ? st.mouth[0] : st.x + st.w / 2;
     ctx.save();
     ctx.globalAlpha = fade;
     ctx.font = `bold 32px ${UI_FONT}`;
@@ -2040,6 +2060,7 @@
     const tw = Math.max(...lines.map((line) => ctx.measureText(line).width));
     const bw = tw + 36;
     const bh = lines.length === 1 ? 52 : 84;
+    const cy = st.y + st.h + bh / 2 + 6;
     roundRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, 12);
     ctx.fillStyle = 'rgba(16,8,6,0.92)';
     ctx.fill();
@@ -2085,22 +2106,21 @@
     };
   }
 
-  function drawSteamer(st) {
-    const x = st.x;
-    const y = st.y;
-    const w = st.w;
-    const h = st.h;
-    const cx = x + w / 2;
-    const cy = y + h * 0.50;
-    const rx = w * 0.46;
-    const ry = h * 0.36;
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.ellipse(cx, y + h - 6, rx * 0.85, 12, 0, 0, Math.PI * 2);
-    ctx.fill();
-    drawPotBody(cx, cy, rx, ry, st.kind);
+  function mouthPoint(st) {
+    return st.mouth ? { x: st.mouth[0], y: st.mouth[1] } : { x: st.x + st.w / 2, y: st.y + st.h * 0.4 };
+  }
 
+  function drawSceneLid(st, hop) {
+    const img = st.kind === 'bamboo' ? assets.lidBamboo : assets.lidAlum;
+    if (!img || !st.lidPaste || !st.lidSize) return;
+    ctx.drawImage(img, st.lidPaste[0], st.lidPaste[1] - (hop || 0), st.lidSize[0], st.lidSize[1]);
+  }
+
+  function drawSteamer(st) {
+    const mouth = mouthPoint(st);
+    const cx = mouth.x;
+    const cy = mouth.y;
+    ctx.save();
     const traveling = st.state === 'serve' && (st.carried || st.carryAge >= 0);
     const cooking = st.state === 'cooking';
     const away = st.kuehHandoff === 'fly' || st.kuehHandoff === 'sprite' || st.kuehHandoff === 'gone';
@@ -2109,22 +2129,22 @@
       || (st.state === 'cooldown' && st.revealAge >= 0 && st.revealAge < 0.55)
       || (st.ruinedT > 0)
     );
-    if (st.overflowed && cooking) drawDrip(cx, cy, rx);
+    const kuehW = (st.mouthD || st.w) * KUEH_WIDTH_RATIO;
+    if (st.overflowed && cooking) drawDrip(cx, cy, kuehW * 0.5);
     if (cooking) {
       const stage = cookSteam(st);
       const hop = stage === 'heart' ? Math.abs(Math.sin(vizT * 14)) * 42 : 0;
-      if (!st.hideLid) drawClosedLid(cx, cy, rx, ry, st.kind, hop);
-      drawSteamStage(cx, cy - ry * 0.85 - hop, stage, vizT + (seedOf(st.id) % 5));
+      if (!st.hideLid) drawSceneLid(st, hop);
+      const steamY = (st.lidPaste ? st.lidPaste[1] : cy) - hop;
+      drawSteamStage(cx, steamY, stage, vizT + (seedOf(st.id) % 5));
     } else {
-      drawFrontRim(cx, cy, rx, ry, st.kind);
-      if (!st.hideLid) drawLid(cx, cy, rx, ry, st.lidOpen == null ? 0.4 : st.lidOpen, st.kind);
-      if (st.puffLife > 0 && !traveling) drawPuff(cx, cy - ry * 0.2, st.puffLife);
+      if (!st.hideLid && st.state !== 'serve') drawSceneLid(st, 0);
+      if (st.puffLife > 0 && !traveling) drawPuff(cx, cy, st.puffLife);
     }
     if (showInPot) {
-      const kuehW = w * KUEH_WIDTH_RATIO;
       const kuehH = kuehW * 0.50;
       const pop = st.scale || 1;
-      drawKueh(cx, cy - (pop - 1) * 30, kuehW * pop, kuehH * pop, st.shownProgress, 1, st.id);
+      drawKueh(cx, cy - (pop - 1) * 18, kuehW * pop, kuehH * pop, st.shownProgress, 1, st.id);
       if (st.ruinedT > 0) {
         ctx.save();
         ctx.strokeStyle = '#ff2a2a';
@@ -2142,7 +2162,7 @@
     const showingGrade = st.revealAge >= 0 && st.revealAge <= 1.2 && st.lastGrade;
     if (!showingGrade) {
       const chip = chipFor(st);
-      drawChip(cx, y + h - 18, chip.icon, chip.label);
+      drawChip(cx, st.y + st.h + 27, chip.icon, chip.label);
     }
     drawDonenessRing(st);
     ctx.restore();
@@ -2161,8 +2181,8 @@
   }
 
   function drawBasketDrop(d) {
-    const bx = ZONES.basket.x + ZONES.basket.w * 0.46;
-    const by = ZONES.basket.y + ZONES.basket.h * 0.58;
+    const bx = basketDrop ? basketDrop[0] : ZONES.basket.x + ZONES.basket.w * 0.46;
+    const by = basketDrop ? basketDrop[1] : ZONES.basket.y + ZONES.basket.h * 0.58;
     const u = Math.min(1, d.age / d.dur);
     const ease = u * u * (3 - 2 * u);
     let x = d.x + (bx - d.x) * ease;
@@ -2185,33 +2205,41 @@
   function draw() {
     ctx.clearRect(0, 0, W, H);
 
-    // Layers (wall → stove → fire → fg → steamers → baoge → product in hand)
-    if (assets.wall) ctx.drawImage(assets.wall, 0, 0, W, H);
-    if (assets.stove) ctx.drawImage(assets.stove, 0, 0, W, H);
-
-    // Fire — full-frame sprite nudged to right stove mouth; screen blend
-    if (assets.fire) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'screen';
+    if (assets.scene) ctx.drawImage(assets.scene, 0, 0, W, H);
+    if (fireOpening) {
       const heat = play ? play.heat : 30;
       const flare = play && play.flareT > 0 ? 0.2 : 0;
       const stroke = fanning ? Math.max(0, fanPhase()) : 0;
-      const flicker = 0.8 + 0.2 * Math.sin(firePulse * 2) + stroke * 0.55 + flare;
-      ctx.globalAlpha = Math.min(1, 0.5 + (heat / 100) * 0.55) * flicker;
-      const ox = 40, oy = 30;
-      ctx.drawImage(assets.fire, ox, oy, W, H);
+      const flicker = 0.35 + (heat / 100) * 0.35 + stroke * 0.45 + flare;
+      const x1 = fireOpening[0];
+      const y1 = fireOpening[1];
+      const x2 = fireOpening[2];
+      const y2 = fireOpening[3];
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2;
+      const rx = (x2 - x1) / 2;
+      const ry = (y2 - y1) / 2;
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      const glow = ctx.createRadialGradient(cx, cy, ry * 0.2, cx, cy, Math.max(rx, ry));
+      glow.addColorStop(0, `rgba(255,170,40,${Math.min(0.85, flicker)})`);
+      glow.addColorStop(1, 'rgba(255,80,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
-
-    // Foreground crate + fan
-    if (assets.fg) ctx.drawImage(assets.fg, 0, 0, W, H);
 
     if (!(state === 'play' && play)) drawBaoge();
 
     // Interactive overlays during play
     if (state === 'play' && play) {
       for (const st of play.steamers) {
-        if (!st.unlocked) continue;
+        if (!st.unlocked) {
+          drawSceneLid(st, 0);
+          continue;
+        }
         drawSteamer(st);
       }
       drawBaoge();
@@ -2303,6 +2331,38 @@
     pourArcFrame = arcAt >= 0 ? arcAt : 1;
     const serveKeys = Object.keys(data.local_points.serve);
     serveReleaseFrame = serveKeys.findIndex((key) => data.local_points.serve[key].release_point);
+    const cages = data.cages || [];
+    STEAMER_DEFS.forEach((def, i) => {
+      const cage = cages[i];
+      if (!cage) return;
+      const box = cage.touch_bbox;
+      def.x = box[0];
+      def.y = box[1];
+      def.w = box[2] - box[0];
+      def.h = box[3] - box[1];
+      def.cageId = cage.id;
+      def.kind = cage.kind === 'aluminum' ? 'alum' : cage.kind;
+      def.mouth = cage.mouth_center.slice();
+      def.mouthD = cage.mouth_diameter_px;
+      def.pourTarget = cage.pour_target.slice();
+      def.lidPaste = cage.lid_paste_xy.slice();
+      def.lidSize = cage.lid_size.slice();
+      def.lidCenter = cage.lid_placement_center.slice();
+    });
+    const footYs = Object.values(data.stations).map((st) => st.foot_world[1]);
+    BAOGE_FLOOR = footYs[0];
+    const basket = data.red_basket.touch_bbox;
+    ZONES.basket.x = basket[0];
+    ZONES.basket.y = basket[1];
+    ZONES.basket.w = basket[2] - basket[0];
+    ZONES.basket.h = basket[3] - basket[1];
+    basketDrop = data.red_basket.drop.slice();
+    const fan = data.floor_fan.bbox;
+    ZONES.fan.x = fan[0];
+    ZONES.fan.y = fan[1];
+    ZONES.fan.w = fan[2] - fan[0];
+    ZONES.fan.h = fan[3] - fan[1];
+    fireOpening = (data.fires.fire_r || data.fires[Object.keys(data.fires)[0]]).opening.slice();
   }
 
   function measureIdle(img) {
@@ -2507,7 +2567,14 @@
       drawSheetFrame(assets.swatSheet, sheetFrame('swat', v.age), v.mirror, footX, footY);
       return;
     }
-    if (v && SHEET_KEY[v.kind] && v.kind !== 'fan' && assets[SHEET_KEY[v.kind]]) {
+    if (v && v.kind === 'lid') {
+      const sheet = lidSheetFor(v);
+      if (sheet) {
+        drawSheetFrame(sheet, sheetFrame('lid', v.age), v.mirror, footX, footY);
+        return;
+      }
+    }
+    if (v && SHEET_KEY[v.kind] && v.kind !== 'fan' && v.kind !== 'lid' && assets[SHEET_KEY[v.kind]]) {
       drawSheetFrame(assets[SHEET_KEY[v.kind]], sheetFrame(v.kind, v.age), v.mirror, footX, footY);
       return;
     }
@@ -2527,22 +2594,18 @@
     drawIdleBody(footX, footY);
   }
 
-  function drawFlyingLid(x, y, kind) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 54, 18, -0.35, 0, Math.PI * 2);
-    ctx.fillStyle = kind === 'bamboo' ? '#e7b45a' : '#d7e0e6';
-    ctx.fill();
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = '#241c16';
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, -2, 7, 0, Math.PI * 2);
-    ctx.fillStyle = kind === 'bamboo' ? '#8a4e22' : '#5d6a72';
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
+  function lidSheetFor(v) {
+    const st = steamerById(v && v.stId);
+    if (st && st.kind === 'bamboo' && assets.lidBambooSheet) return assets.lidBambooSheet;
+    return assets.lidSheet;
+  }
+
+  function drawFlyingLid(x, y, st) {
+    const img = st && st.kind === 'bamboo' ? assets.lidBamboo : assets.lidAlum;
+    if (img && st && st.lidSize) {
+      ctx.drawImage(img, x - st.lidSize[0] / 2, y - st.lidSize[1] / 2, st.lidSize[0], st.lidSize[1]);
+      return;
+    }
   }
 
   function drawActionProps() {
@@ -2554,7 +2617,9 @@
     if (v.kind === 'pour' && sheetFrame('pour', v.age) === pourArcFrame && st) {
       const mouth = localPoint('pour', 'f2', 'ladle_mouth');
       const a = localToWorld(mouth[0], mouth[1], footX, footY, v.mirror);
-      const b = { x: st.x + st.w / 2, y: st.y + st.h * 0.42 };
+      const b = st.pourTarget
+        ? { x: st.pourTarget[0], y: st.pourTarget[1] }
+        : mouthPoint(st);
       ctx.save();
       ctx.strokeStyle = '#f3ddb0';
       ctx.lineWidth = 8;
@@ -2568,22 +2633,24 @@
     if (v.kind === 'lidFly' && st) {
       const t = Math.min(1, v.age / (SHEET_MS.lid[0] / 1000));
       const ease = t * t * (3 - 2 * t);
-      const from = { x: st.x + st.w / 2, y: st.y + st.h * 0.22 };
+      const from = st.lidCenter
+        ? { x: st.lidCenter[0], y: st.lidCenter[1] }
+        : mouthPoint(st);
       const dest = localPoint('lid', 'f1', 'lid_center');
       const to = localToWorld(dest[0], dest[1], footX, footY, v.mirror);
       const x = from.x + (to.x - from.x) * ease;
       const y = from.y + (to.y - from.y) * ease - Math.sin(ease * Math.PI) * 70;
-      drawFlyingLid(x, y, st.kind);
+      drawFlyingLid(x, y, st);
     }
     if (v.kind === 'kuehFly' && st) {
       const t = Math.min(1, v.age / (SHEET_MS.take[0] / 1000));
       const ease = t * t * (3 - 2 * t);
-      const from = { x: st.x + st.w / 2, y: st.y + st.h * 0.48 };
+      const from = mouthPoint(st);
       const dest = localPoint('take', 'f1', 'kueh_in_hand');
       const to = localToWorld(dest[0], dest[1], footX, footY, v.mirror);
       const x = from.x + (to.x - from.x) * ease;
       const y = from.y + (to.y - from.y) * ease - Math.sin(ease * Math.PI) * 60;
-      const kuehW = Math.min(150, st.w * 0.55);
+      const kuehW = (st.mouthD || st.w) * KUEH_WIDTH_RATIO;
       drawKueh(x, y, kuehW, kuehW * 0.5, st.shownProgress, 1, st.id);
     }
   }
@@ -2868,6 +2935,18 @@
             left: play.baoge.x + (idleMetrics.minX - idleMetrics.footX) * IDLE_SCALE,
             right: play.baoge.x + (idleMetrics.maxX - idleMetrics.footX) * IDLE_SCALE,
           },
+          floor: BAOGE_FLOOR,
+          homeX: BAOGE_HOME_X,
+          zones: {
+            basket: { ...ZONES.basket },
+            fan: { ...ZONES.fan },
+          },
+          fire: fireOpening && fireOpening.slice(),
+          basketDrop: basketDrop && basketDrop.slice(),
+          cages: play.steamers.map((s) => ({
+            id: s.id, cageId: s.cageId, kind: s.kind,
+            mouth: s.mouth, box: [s.x, s.y, s.x + s.w, s.y + s.h],
+          })),
           heartStreak: play.heartStreak,
           multiFlash: play.multiFlash,
           timeLeft: play.timeLeft,
@@ -2896,6 +2975,8 @@
         if (!st) return;
         st.unlocked = true;
         st.state = 'cooking';
+        st.hideLid = false;
+        st.kuehHandoff = null;
         st.progress = p;
         st.lidOpen = 0;
         st.revealAge = -1;
